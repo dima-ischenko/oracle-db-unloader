@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Set, Tuple
+from typing import Iterable, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -58,6 +58,65 @@ SOURCE_TYPES = {
 }
 
 HEADER_TYPES = {'TABLE', 'MATERIALIZED VIEW'}
+
+ALL_OBJECT_TYPES = tuple(TYPE_FOLDERS)
+
+_TYPE_ALIASES = {
+    'table': 'TABLE',
+    'tables': 'TABLE',
+    'view': 'VIEW',
+    'views': 'VIEW',
+    'mview': 'MATERIALIZED VIEW',
+    'mviews': 'MATERIALIZED VIEW',
+    'materialized view': 'MATERIALIZED VIEW',
+    'package': 'PACKAGE',
+    'packages': 'PACKAGE',
+    'package body': 'PACKAGE BODY',
+    'function': 'FUNCTION',
+    'functions': 'FUNCTION',
+    'procedure': 'PROCEDURE',
+    'procedures': 'PROCEDURE',
+    'trigger': 'TRIGGER',
+    'triggers': 'TRIGGER',
+    'type': 'TYPE',
+    'types': 'TYPE',
+    'type body': 'TYPE BODY',
+    'sequence': 'SEQUENCE',
+    'sequences': 'SEQUENCE',
+    'synonym': 'SYNONYM',
+    'synonyms': 'SYNONYM',
+}
+for _name in ALL_OBJECT_TYPES:
+    _TYPE_ALIASES[_name.lower()] = _name
+
+_TYPE_EXPAND = {
+    'PACKAGE': ('PACKAGE', 'PACKAGE BODY'),
+    'TYPE': ('TYPE', 'TYPE BODY'),
+}
+
+
+def normalize_object_types(values: Optional[Sequence[str]] = None) -> List[str]:
+    """Map user-facing type names to canonical Oracle object types.
+
+    ``package`` / ``type`` expand to spec + body. Unknown names raise
+    ``ValueError``. ``None`` or an empty list means every supported type.
+    """
+    if not values:
+        return list(ALL_OBJECT_TYPES)
+    selected: List[str] = []
+    for raw in values:
+        token = ' '.join(raw.strip().lower().replace('_', ' ').split())
+        if not token:
+            continue
+        canonical = _TYPE_ALIASES.get(token)
+        if canonical is None:
+            raise ValueError(f'unknown object type: {raw}')
+        for item in _TYPE_EXPAND.get(canonical, (canonical,)):
+            if item not in selected:
+                selected.append(item)
+    if not selected:
+        return list(ALL_OBJECT_TYPES)
+    return selected
 
 
 @dataclass(frozen=True)
@@ -114,18 +173,38 @@ def plan_actions(
     return to_write, to_delete
 
 
-def walk_schema_files(output_dir: Path, schema: str) -> Set[str]:
-    root = output_dir / schema.lower()
+def walk_schema_files(
+    output_dir: Path,
+    schema: str,
+    object_types: Optional[Sequence[str]] = None,
+) -> Set[str]:
+    types = list(object_types) if object_types else list(ALL_OBJECT_TYPES)
     found: Set[str] = set()
-    if not root.is_dir():
-        return found
-    folders = set(TYPE_FOLDERS.values())
-    for folder in folders:
-        directory = root / folder
-        if not directory.is_dir():
+    for object_type in types:
+        found.update(_walk_type_files(output_dir, schema, object_type))
+    return found
+
+
+def _walk_type_files(output_dir: Path, schema: str, object_type: str) -> Set[str]:
+    folder = TYPE_FOLDERS[object_type]
+    directory = Path(output_dir) / schema.lower() / folder
+    if not directory.is_dir():
+        return set()
+    suffix = TYPE_SUFFIX.get(object_type)
+    sibling_suffixes = [
+        TYPE_SUFFIX[other]
+        for other, other_folder in TYPE_FOLDERS.items()
+        if other_folder == folder and other in TYPE_SUFFIX and other != object_type
+    ]
+    found: Set[str] = set()
+    for path in directory.glob('*.sql'):
+        name = path.name.lower()
+        if suffix:
+            if not name.endswith(f'{suffix}.sql'):
+                continue
+        elif any(name.endswith(f'{item}.sql') for item in sibling_suffixes):
             continue
-        for path in directory.glob('*.sql'):
-            found.add(path.relative_to(output_dir).as_posix())
+        found.add(path.relative_to(output_dir).as_posix())
     return found
 
 

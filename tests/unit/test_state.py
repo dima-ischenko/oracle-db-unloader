@@ -14,23 +14,37 @@ from oracle_db_unloader.state import (
 def test_missing_state_file(tmp_path):
     state = load_state(tmp_path)
     assert state == {'schemas': {}}
-    assert get_last_unload_at(state, 'SCOTT') is None
+    assert get_last_unload_at(state, 'SCOTT', 'TABLE') is None
 
 
-def test_watermark_roundtrip(tmp_path):
+def test_watermark_roundtrip_per_type(tmp_path):
     when = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
-    state = set_last_unload_at({'schemas': {}}, 'scott', when)
+    later = datetime(2026, 11, 16, 9, 0, tzinfo=timezone.utc)
+    state = set_last_unload_at({'schemas': {}}, 'scott', when, 'TABLE')
+    state = set_last_unload_at(state, 'scott', later, 'VIEW')
     save_state(tmp_path, state)
-    assert state_path(tmp_path).is_file()
     loaded = load_state(tmp_path)
-    assert get_last_unload_at(loaded, 'SCOTT') == when
-    assert '2026-11-16T08:00:00+00:00' in state_path(tmp_path).read_text(
-        encoding='utf-8'
-    )
+    assert get_last_unload_at(loaded, 'SCOTT', 'TABLE') == when
+    assert get_last_unload_at(loaded, 'SCOTT', 'VIEW') == later
+    payload = state_path(tmp_path).read_text(encoding='utf-8')
+    assert 'TABLE' in payload
+    assert 'VIEW' in payload
 
 
-def test_failed_schema_does_not_have_to_advance():
+def test_old_schema_watermark_is_fallback():
     when = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
-    state = set_last_unload_at({'schemas': {}}, 'HR', when)
-    assert get_last_unload_at(state, 'SCOTT') is None
-    assert get_last_unload_at(state, 'HR') == when
+    state = {
+        'schemas': {
+            'SCOTT': {'last_unload_at': when.isoformat()},
+        }
+    }
+    assert get_last_unload_at(state, 'SCOTT', 'TABLE') == when
+
+
+def test_type_watermark_does_not_clobber_other_types():
+    when = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
+    later = datetime(2026, 11, 16, 9, 0, tzinfo=timezone.utc)
+    state = set_last_unload_at({'schemas': {}}, 'HR', when, 'TABLE')
+    state = set_last_unload_at(state, 'HR', later, 'PACKAGE')
+    assert get_last_unload_at(state, 'HR', 'TABLE') == when
+    assert get_last_unload_at(state, 'SCOTT', 'TABLE') is None

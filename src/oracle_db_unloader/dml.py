@@ -7,14 +7,13 @@ from typing import Any, List, Optional, Sequence
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from tabulate import tabulate
 
 from .logger import get_logger
 
 logger = get_logger(__name__)
 
 NULL_TOKEN = 'null'
-HEADER_DELIM = '||'
-VALUE_DELIM = '|'
 _MONTHS = (
     'jan',
     'feb',
@@ -50,7 +49,7 @@ def stringify_cell(value: Any) -> Optional[str]:
     return str(value)
 
 
-def format_horizontal(
+def format_table(
     columns: Sequence[str],
     rows: Sequence[Sequence[Any]],
 ) -> str:
@@ -61,27 +60,15 @@ def format_horizontal(
             rendered = stringify_cell(value)
             rendered_row.append(NULL_TOKEN if rendered is None else rendered)
         str_rows.append(rendered_row)
-
-    widths = [len(column) + len(HEADER_DELIM) for column in columns]
-    for row in str_rows:
-        for i, value in enumerate(row):
-            if len(value) > widths[i]:
-                widths[i] = len(value)
-
-    header_parts = []
-    for i, column in enumerate(columns):
-        prefix = HEADER_DELIM if i == 0 else ''
-        header_parts.append(
-            prefix + column.ljust(widths[i] - len(VALUE_DELIM)) + HEADER_DELIM
+    return (
+        tabulate(
+            str_rows,
+            headers=list(columns),
+            tablefmt='github',
+            disable_numparse=True,
         )
-    lines = [''.join(header_parts)]
-    for row in str_rows:
-        parts = []
-        for i, value in enumerate(row):
-            prefix = VALUE_DELIM if i == 0 else ''
-            parts.append(prefix + value.ljust(widths[i]) + VALUE_DELIM)
-        lines.append(''.join(parts))
-    return '\n'.join(lines) + '\n'
+        + '\n'
+    )
 
 
 def dump_custom_sql(engine: Engine, custom_sql_dir: Path, output_dir: Path) -> None:
@@ -102,7 +89,7 @@ def dump_custom_sql(engine: Engine, custom_sql_dir: Path, output_dir: Path) -> N
             result = conn.execute(text(sql))
             columns = list(result.keys())
             rows = [list(row) for row in result]
-            rendered = format_horizontal(columns, rows)
+            rendered = format_table(columns, rows)
             target = dml_dir / f'{path.stem}.txt'
             target.write_text(rendered, encoding='utf-8')
             dumped += 1

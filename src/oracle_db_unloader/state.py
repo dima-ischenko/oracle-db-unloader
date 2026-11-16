@@ -27,9 +27,7 @@ def save_state(output_dir: Path, state: Dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 
 
-def get_last_unload_at(state: Dict[str, Any], schema: str) -> Optional[datetime]:
-    entry = (state.get('schemas') or {}).get(schema.upper()) or {}
-    raw = entry.get('last_unload_at')
+def _parse_timestamp(raw: Optional[str]) -> Optional[datetime]:
     if not raw:
         return None
     value = datetime.fromisoformat(raw)
@@ -38,15 +36,37 @@ def get_last_unload_at(state: Dict[str, Any], schema: str) -> Optional[datetime]
     return value.astimezone(timezone.utc)
 
 
+def get_last_unload_at(
+    state: Dict[str, Any],
+    schema: str,
+    object_type: Optional[str] = None,
+) -> Optional[datetime]:
+    entry = (state.get('schemas') or {}).get(schema.upper()) or {}
+    if object_type:
+        typed = ((entry.get('types') or {}).get(object_type) or {}).get(
+            'last_unload_at'
+        )
+        parsed = _parse_timestamp(typed)
+        if parsed is not None:
+            return parsed
+    return _parse_timestamp(entry.get('last_unload_at'))
+
+
 def set_last_unload_at(
     state: Dict[str, Any],
     schema: str,
     when: datetime,
+    object_type: str,
 ) -> Dict[str, Any]:
     schemas = dict(state.get('schemas') or {})
+    schema_key = schema.upper()
+    entry = dict(schemas.get(schema_key) or {})
+    types = dict(entry.get('types') or {})
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     else:
         when = when.astimezone(timezone.utc)
-    schemas[schema.upper()] = {'last_unload_at': when.isoformat()}
+    types[object_type] = {'last_unload_at': when.isoformat()}
+    entry['types'] = types
+    schemas[schema_key] = entry
     return {'schemas': schemas}

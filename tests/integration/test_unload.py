@@ -9,13 +9,21 @@ from oracle_db_unloader import unload
 from oracle_db_unloader.state import get_last_unload_at, load_state
 
 
-def _unload(engine, tmp_path, custom_sql_dir=None, full=False, lookback_minutes=0):
+def _unload(
+    engine,
+    tmp_path,
+    custom_sql_dir=None,
+    full=False,
+    lookback_minutes=0,
+    object_types=None,
+):
     unload(
         engine,
         schemas=['TEST'],
         output_dir=tmp_path,
         max_connections=2,
         custom_sql_dir=custom_sql_dir,
+        object_types=object_types,
         full=full,
         lookback_minutes=lookback_minutes,
     )
@@ -61,12 +69,13 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert 'subpartition template' in sales_sql
 
     dml_text = dml.read_text(encoding='utf-8')
-    assert dml_text.splitlines()[0].startswith('||')
+    assert dml_text.splitlines()[0].startswith('|')
     assert 'USD' in dml_text
     assert 'null' in dml_text
 
     state = load_state(tmp_path)
-    assert get_last_unload_at(state, 'TEST') is not None
+    assert get_last_unload_at(state, 'TEST', 'TABLE') is not None
+    assert get_last_unload_at(state, 'TEST', 'VIEW') is not None
 
 
 def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
@@ -101,4 +110,29 @@ def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
     assert pkg_after != pkg_before
     assert emp.read_text(encoding='utf-8') == emp_before
     assert emp.stat().st_mtime == emp_mtime
+    assert not view.exists()
+
+
+def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path)
+    view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
+    emp = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
+    assert view.is_file()
+
+    with fresh_schema.begin() as conn:
+        conn.execute(text('drop view emp_v'))
+
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path, object_types=['TABLE'])
+    assert view.is_file()
+    assert emp.is_file()
+    state = load_state(tmp_path)
+    table_stamp = get_last_unload_at(state, 'TEST', 'TABLE')
+    view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
+    assert table_stamp is not None
+    assert view_stamp is not None
+    assert table_stamp >= view_stamp
+
+    _unload(fresh_schema, tmp_path, object_types=['VIEW'])
     assert not view.exists()

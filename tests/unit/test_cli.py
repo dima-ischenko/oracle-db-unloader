@@ -24,6 +24,7 @@ def test_parse_db_url_and_defaults():
     assert args.full is False
     assert args.custom_sql_dir is None
     assert args.log_level == 'INFO'
+    assert args.object_types is None
 
 
 def test_parse_login_and_flags():
@@ -48,6 +49,8 @@ def test_parse_login_and_flags():
             '0',
             '--log-level',
             'DEBUG',
+            '--object-types',
+            'table,package',
         ]
     )
     assert args.db_login == 'system'
@@ -57,6 +60,23 @@ def test_parse_login_and_flags():
     assert args.full is True
     assert args.lookback_minutes == 0
     assert args.log_level == 'DEBUG'
+    assert args.object_types == ['TABLE', 'PACKAGE', 'PACKAGE BODY']
+
+
+def test_unknown_object_type_errors():
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                '--db-url',
+                'oracle+oracledb://u:p@x',
+                '--schemas',
+                'scott',
+                '--output-dir',
+                'out',
+                '--object-types',
+                'widget',
+            ]
+        )
 
 
 def test_missing_connection_errors():

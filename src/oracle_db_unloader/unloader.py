@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -17,6 +17,7 @@ from .inventory import (
     UNLOAD_SQL,
     DbObject,
     fetch_inventory,
+    normalize_object_types,
     plan_actions,
     walk_schema_files,
 )
@@ -98,9 +99,11 @@ def _normalize_schemas(schemas: Sequence[str]) -> List[str]:
     return seen
 
 
-def unload_schema(
+def _unload_object_type(
     engine: Engine,
     schema: str,
+    object_type: str,
+    objects: Sequence[DbObject],
     output_dir: Path,
     *,
     last_unload_at: Optional[datetime],
@@ -108,14 +111,15 @@ def unload_schema(
     max_connections: int,
     full: bool,
 ) -> None:
-    objects = fetch_inventory(engine, schema)
-    disk = walk_schema_files(output_dir, schema)
+    disk = walk_schema_files(output_dir, schema, [object_type])
     watermark = None if full else last_unload_at
     to_write, to_delete = plan_actions(objects, disk, watermark, lookback_minutes)
     workers = max(1, min(max_connections, len(to_write) or 1))
     logger.info(
-        'schema %s: inventory=%d write=%d delete=%d workers=%d watermark=%s',
+        'schema %s type %s: inventory=%d write=%d delete=%d workers=%d '
+        'watermark=%s',
         schema,
+        object_type,
         len(objects),
         len(to_write),
         len(to_delete),
@@ -144,7 +148,56 @@ def unload_schema(
     _delete_files(output_dir, to_delete)
     if errors:
         names = ', '.join(f'{obj.owner}.{obj.name}' for obj, _exc in errors)
-        raise UnloadError(f'failed to unload {len(errors)} object(s) in {schema}: {names}')
+        raise UnloadError(
+            f'failed to unload {len(errors)} {object_type} object(s) in {schema}: {names}'
+        )
+
+
+def unload_schema(
+    engine: Engine,
+    schema: str,
+    output_dir: Path,
+    *,
+    object_types: Sequence[str],
+    state: Dict[str, Any],
+    run_start: datetime,
+    lookback_minutes: int,
+    max_connections: int,
+    full: bool,
+) -> Dict[str, Any]:
+    inventory = fetch_inventory(engine, schema)
+    by_type: Dict[str, List[DbObject]] = {
+        object_type: [] for object_type in object_types
+    }
+    for obj in inventory:
+        if obj.object_type in by_type:
+            by_type[obj.object_type].append(obj)
+
+    type_errors = []
+    for object_type in object_types:
+        try:
+            _unload_object_type(
+                engine,
+                schema,
+                object_type,
+                by_type[object_type],
+                output_dir,
+                last_unload_at=get_last_unload_at(state, schema, object_type),
+                lookback_minutes=lookback_minutes,
+                max_connections=max_connections,
+                full=full,
+            )
+        except Exception as exc:
+            logger.exception('schema %s type %s failed', schema, object_type)
+            type_errors.append((object_type, exc))
+        else:
+            state = set_last_unload_at(state, schema, run_start, object_type)
+            save_state(output_dir, state)
+            logger.info('schema %s type %s: done', schema, object_type)
+    if type_errors:
+        names = ', '.join(object_type for object_type, _exc in type_errors)
+        raise UnloadError(f'failed to unload type(s) in {schema}: {names}')
+    return state
 
 
 def unload(
@@ -154,6 +207,7 @@ def unload(
     *,
     max_connections: int = 5,
     custom_sql_dir: Union[str, Path, None] = None,
+    object_types: Optional[Sequence[str]] = None,
     full: bool = False,
     lookback_minutes: int = 5,
 ) -> None:
@@ -165,14 +219,16 @@ def unload(
     if max_connections < 1:
         raise ValueError('max_connections must be >= 1')
     schema_list = _normalize_schemas(schemas)
+    type_list = normalize_object_types(object_types)
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     run_start = datetime.now(timezone.utc)
     started = time.perf_counter()
     logger.info(
-        'unload start schemas=%s output_dir=%s full=%s lookback_minutes=%s '
-        'custom_sql_dir=%s',
+        'unload start schemas=%s object_types=%s output_dir=%s full=%s '
+        'lookback_minutes=%s custom_sql_dir=%s',
         ','.join(schema_list),
+        ','.join(type_list),
         target,
         full,
         lookback_minutes,
@@ -183,11 +239,13 @@ def unload(
     for schema in schema_list:
         logger.info('unloading schema %s to %s', schema, target)
         try:
-            unload_schema(
+            state = unload_schema(
                 engine,
                 schema,
                 target,
-                last_unload_at=get_last_unload_at(state, schema),
+                object_types=type_list,
+                state=state,
+                run_start=run_start,
                 lookback_minutes=lookback_minutes,
                 max_connections=max_connections,
                 full=full,
@@ -196,8 +254,6 @@ def unload(
             logger.exception('schema %s failed', schema)
             schema_errors.append((schema, exc))
         else:
-            state = set_last_unload_at(state, schema, run_start)
-            save_state(target, state)
             logger.info('schema %s: done', schema)
 
     if custom_sql_dir is not None:

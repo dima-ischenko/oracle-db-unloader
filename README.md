@@ -19,6 +19,7 @@ pip install -e ".[test]"
 ```bash
 db-unloader --db-url oracle+oracledb://system:pass@localhost:1521/?service_name=FREEPDB1 \
   --schemas scott,hr \
+  --object-types table,view,package \
   --output-dir ./ddl \
   --max-connections 5 \
   --custom-sql-dir ./dictionary_sql
@@ -31,11 +32,14 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
   --schemas scott --output-dir ./ddl
 ```
 
-`--full` ignores the watermark and rewrites every object. `--lookback-minutes`
-(default 5) widens the incremental cutoff so objects touched around the last
-run are retried. `--log-level DEBUG|INFO|WARNING|ERROR` (default `INFO`)
-configures the CLI logger. Importing the library does not attach handlers;
-the host process owns logging.
+`--object-types` limits the run to selected Oracle types (`table`, `view`,
+`package`, `mview`, `function`, `procedure`, `trigger`, `type`, `sequence`,
+`synonym`). `package` and `type` include spec and body. Incremental watermarks
+are stored per schema and object type. `--full` ignores watermarks and rewrites
+every selected object. `--lookback-minutes` (default 5) widens the cutoff so
+objects touched around the last run are retried. `--log-level
+DEBUG|INFO|WARNING|ERROR` (default `INFO`) configures the CLI logger. Importing
+the library does not attach handlers; the host process owns logging.
 
 ## Library
 
@@ -53,6 +57,7 @@ try:
     unload(
         engine,
         schemas=['SCOTT'],
+        object_types=['table', 'package'],
         output_dir='/data/ddl',
         max_connections=5,
         custom_sql_dir='/data/dictionary_sql',
@@ -77,7 +82,7 @@ The tree is reused across runs (no timestamp folder) so git and incremental
 unloads work. Table and materialized-view files get an LLM comment header with
 a bucketed `dba_tables.num_rows` label and a compact partition template
 (no per-partition lists). Custom `*.sql` SELECTs are always re-run and written
-as print_table HORIZONTAL text under `dml/`.
+as GitHub-flavored tables under `dml/`.
 
 ## Tests
 

@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from oracle_db_unloader.dml import format_horizontal, stringify_cell
+from oracle_db_unloader.dml import format_table, stringify_cell
 
 
-def test_horizontal_layout_pads_and_nulls():
-    rendered = format_horizontal(
+def test_github_table_layout_and_nulls():
+    rendered = format_table(
         ['ID', 'NAME'],
         [
             [1, 'abc'],
@@ -15,9 +15,12 @@ def test_horizontal_layout_pads_and_nulls():
         ],
     )
     lines = rendered.splitlines()
-    assert lines[0] == '||ID ||NAME ||'
-    assert lines[1] == '|1   |abc   |'
-    assert lines[2] == '|null|x     |'
+    assert lines[0].startswith('|')
+    assert 'ID' in lines[0]
+    assert 'NAME' in lines[0]
+    assert lines[1].replace(' ', '').startswith('|---')
+    assert 'abc' in rendered
+    assert 'null' in rendered
 
 
 def test_stringify_cell_formats_types():

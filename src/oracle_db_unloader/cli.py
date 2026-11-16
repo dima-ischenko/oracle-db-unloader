@@ -5,6 +5,7 @@ import sys
 from typing import Optional, Sequence
 
 from .engine import build_url, create_unloader_engine
+from .inventory import normalize_object_types
 from .logger import configure_logging, get_logger
 from .unloader import UnloadError, unload
 
@@ -41,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--custom-sql-dir',
         dest='custom_sql_dir',
         default=None,
-        help='Directory of SELECT scripts dumped as print_table HORIZONTAL text',
+        help='Directory of SELECT scripts dumped as text tables under dml/',
     )
     parser.add_argument(
         '--full',
@@ -62,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
         help='Log verbosity (default: INFO)',
     )
+    parser.add_argument(
+        '--object-types',
+        dest='object_types',
+        default=None,
+        help=(
+            'Comma-separated object types (default: all). '
+            'Examples: table,view,package,mview,function,procedure,'
+            'trigger,type,sequence,synonym'
+        ),
+    )
     return parser
 
 
@@ -74,10 +85,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error('--max-connections must be >= 1')
     if args.lookback_minutes < 0:
         parser.error('--lookback-minutes must be >= 0')
+    if args.object_types:
+        try:
+            args.object_types = normalize_object_types(_split_csv(args.object_types))
+        except ValueError as exc:
+            parser.error(str(exc))
+    else:
+        args.object_types = None
     return args
 
 
-def _split_schemas(raw: str) -> list[str]:
+def _split_csv(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(',') if part.strip()]
 
 
@@ -94,10 +112,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         unload(
             engine,
-            schemas=_split_schemas(args.schemas),
+            schemas=_split_csv(args.schemas),
             output_dir=args.output_dir,
             max_connections=args.max_connections,
             custom_sql_dir=args.custom_sql_dir,
+            object_types=args.object_types,
             full=args.full,
             lookback_minutes=args.lookback_minutes,
         )

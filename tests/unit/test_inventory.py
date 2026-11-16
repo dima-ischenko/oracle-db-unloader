@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from oracle_db_unloader.inventory import DbObject, object_relpath, plan_actions
+import pytest
+
+from oracle_db_unloader.inventory import (
+    ALL_OBJECT_TYPES,
+    DbObject,
+    normalize_object_types,
+    object_relpath,
+    plan_actions,
+    walk_schema_files,
+)
 
 
 def _obj(name, object_type, last_ddl, schema='SCOTT'):
@@ -65,3 +74,35 @@ def test_plan_lookback_includes_recent_objects():
         lookback_minutes=5,
     )
     assert to_write == [emp]
+
+
+def test_normalize_object_types_aliases_and_expand():
+    assert normalize_object_types(None) == list(ALL_OBJECT_TYPES)
+    assert normalize_object_types(['table', 'VIEW']) == ['TABLE', 'VIEW']
+    assert normalize_object_types(['package']) == ['PACKAGE', 'PACKAGE BODY']
+    assert normalize_object_types(['type']) == ['TYPE', 'TYPE BODY']
+    assert normalize_object_types(['package body']) == ['PACKAGE BODY']
+    assert normalize_object_types(['mview']) == ['MATERIALIZED VIEW']
+
+
+def test_normalize_object_types_unknown():
+    with pytest.raises(ValueError, match='unknown object type'):
+        normalize_object_types(['widget'])
+
+
+def test_walk_schema_files_filters_by_type_suffix(tmp_path):
+    pkg = tmp_path / 'scott' / 'packages'
+    tables = tmp_path / 'scott' / 'tables'
+    pkg.mkdir(parents=True)
+    tables.mkdir(parents=True)
+    (pkg / 'pkg_x_s.sql').write_text('-- spec\n', encoding='utf-8')
+    (pkg / 'pkg_x_b.sql').write_text('-- body\n', encoding='utf-8')
+    (tables / 'emp.sql').write_text('-- table\n', encoding='utf-8')
+
+    assert walk_schema_files(tmp_path, 'SCOTT', ['PACKAGE']) == {
+        'scott/packages/pkg_x_s.sql'
+    }
+    assert walk_schema_files(tmp_path, 'SCOTT', ['PACKAGE BODY']) == {
+        'scott/packages/pkg_x_b.sql'
+    }
+    assert walk_schema_files(tmp_path, 'SCOTT', ['TABLE']) == {'scott/tables/emp.sql'}
