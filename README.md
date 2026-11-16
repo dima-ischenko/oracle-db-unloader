@@ -35,7 +35,7 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
 (default 5) widens the incremental cutoff so objects touched around the last
 run are retried.
 
-## Library / Airflow
+## Library
 
 ```python
 from sqlalchemy import create_engine
@@ -58,10 +58,6 @@ try:
 finally:
     engine.dispose()
 ```
-
-A daily DAG that unloads into a git working copy and commits there lives in
-[`examples/airflow/ddl_unloader_dag.py`](examples/airflow/ddl_unloader_dag.py).
-Copy it into your Airflow DAGs folder; git pull/commit/push stays in the DAG.
 
 ## Output layout
 
