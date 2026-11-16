@@ -8,6 +8,10 @@ from typing import Any, List, Optional, Sequence
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
 NULL_TOKEN = 'null'
 HEADER_DELIM = '||'
 VALUE_DELIM = '|'
@@ -87,10 +91,13 @@ def dump_custom_sql(engine: Engine, custom_sql_dir: Path, output_dir: Path) -> N
     dml_dir = Path(output_dir) / 'dml'
     dml_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(sql_dir.glob('*.sql'))
+    logger.info('custom sql: %d script(s) from %s', len(files), sql_dir)
+    dumped = 0
     with engine.connect() as conn:
         for path in files:
             sql = path.read_text(encoding='utf-8').strip()
             if not sql:
+                logger.warning('custom sql skipped empty file %s', path.name)
                 continue
             result = conn.execute(text(sql))
             columns = list(result.keys())
@@ -98,3 +105,11 @@ def dump_custom_sql(engine: Engine, custom_sql_dir: Path, output_dir: Path) -> N
             rendered = format_horizontal(columns, rows)
             target = dml_dir / f'{path.stem}.txt'
             target.write_text(rendered, encoding='utf-8')
+            dumped += 1
+            logger.info(
+                'custom sql %s -> %s (%d rows)',
+                path.name,
+                target.as_posix(),
+                len(rows),
+            )
+    logger.info('custom sql: wrote %d file(s) to %s', dumped, dml_dir)

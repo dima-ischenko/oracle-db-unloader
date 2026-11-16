@@ -23,6 +23,7 @@ def test_parse_db_url_and_defaults():
     assert args.lookback_minutes == 5
     assert args.full is False
     assert args.custom_sql_dir is None
+    assert args.log_level == 'INFO'
 
 
 def test_parse_login_and_flags():
@@ -45,6 +46,8 @@ def test_parse_login_and_flags():
             '--full',
             '--lookback-minutes',
             '0',
+            '--log-level',
+            'DEBUG',
         ]
     )
     assert args.db_login == 'system'
@@ -53,6 +56,7 @@ def test_parse_login_and_flags():
     assert args.custom_sql_dir == 'sql'
     assert args.full is True
     assert args.lookback_minutes == 0
+    assert args.log_level == 'DEBUG'
 
 
 def test_missing_connection_errors():

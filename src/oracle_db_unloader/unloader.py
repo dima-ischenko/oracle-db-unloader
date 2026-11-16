@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +20,7 @@ from .inventory import (
     plan_actions,
     walk_schema_files,
 )
+from .logger import get_logger
 from .metadata import (
     fetch_num_rows,
     fetch_partition_info,
@@ -29,7 +30,7 @@ from .metadata import (
 from .resources import bind_params, concat_ddl, load_sql, split_statements
 from .state import get_last_unload_at, load_state, save_state, set_last_unload_at
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UnloadError(RuntimeError):
@@ -111,8 +112,17 @@ def unload_schema(
     disk = walk_schema_files(output_dir, schema)
     watermark = None if full else last_unload_at
     to_write, to_delete = plan_actions(objects, disk, watermark, lookback_minutes)
-    errors = []
     workers = max(1, min(max_connections, len(to_write) or 1))
+    logger.info(
+        'schema %s: inventory=%d write=%d delete=%d workers=%d watermark=%s',
+        schema,
+        len(objects),
+        len(to_write),
+        len(to_delete),
+        workers,
+        watermark.isoformat() if watermark else 'none',
+    )
+    errors = []
     if to_write:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
@@ -158,6 +168,16 @@ def unload(
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     run_start = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    logger.info(
+        'unload start schemas=%s output_dir=%s full=%s lookback_minutes=%s '
+        'custom_sql_dir=%s',
+        ','.join(schema_list),
+        target,
+        full,
+        lookback_minutes,
+        custom_sql_dir or 'none',
+    )
     state = load_state(target)
     schema_errors = []
     for schema in schema_list:
@@ -178,10 +198,14 @@ def unload(
         else:
             state = set_last_unload_at(state, schema, run_start)
             save_state(target, state)
+            logger.info('schema %s: done', schema)
 
     if custom_sql_dir is not None:
         dump_custom_sql(engine, Path(custom_sql_dir), target)
 
+    elapsed = time.perf_counter() - started
     if schema_errors:
         names = ', '.join(schema for schema, _exc in schema_errors)
+        logger.error('unload failed for schema(s): %s (%.1fs)', names, elapsed)
         raise UnloadError(f'unload failed for schema(s): {names}')
+    logger.info('unload complete in %.1fs', elapsed)

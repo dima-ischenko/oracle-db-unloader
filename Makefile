@@ -1,7 +1,7 @@
 PYTHON ?= python
 COMPOSE = docker compose -f tests/integration/docker/docker-compose.yml
 
-.PHONY: help lint test-unit test-integration up-db down-db
+.PHONY: help lint test-unit test-integration up-db down-db build
 
 help:
 	@echo "lint               ruff check and format check"
@@ -9,6 +9,7 @@ help:
 	@echo "test-integration   pytest tests/integration (Oracle must be up)"
 	@echo "up-db              start Oracle docker"
 	@echo "down-db            stop Oracle docker"
+	@echo "build              sdist and wheel"
 
 lint:
 	$(PYTHON) -m ruff check src tests
@@ -25,3 +26,6 @@ up-db:
 
 down-db:
 	$(COMPOSE) down -v
+
+build:
+	$(PYTHON) -m build

@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dima-ischenko/oracle-db-unloader"
+Homepage = "https://github.com/dima-ischenko/oracle_db_unloader"
 
 [project.optional-dependencies]
 dev = [

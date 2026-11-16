@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from typing import Optional, Sequence
 
 from .engine import build_url, create_unloader_engine
+from .logger import configure_logging, get_logger
 from .unloader import UnloadError, unload
+
+logger = get_logger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help='Widen incremental cutoff by this many minutes (default: 5)',
     )
+    parser.add_argument(
+        '--log-level',
+        dest='log_level',
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        help='Log verbosity (default: INFO)',
+    )
     return parser
 
 
@@ -73,8 +82,8 @@ def _split_schemas(raw: str) -> list[str]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
     args = parse_args(argv)
+    configure_logging(args.log_level)
     url = build_url(
         url=args.db_url,
         db_login=args.db_login,
@@ -93,7 +102,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             lookback_minutes=args.lookback_minutes,
         )
     except UnloadError as exc:
-        logging.error('%s', exc)
+        logger.error('%s', exc)
         return 1
     finally:
         engine.dispose()

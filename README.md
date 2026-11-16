@@ -33,7 +33,9 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
 
 `--full` ignores the watermark and rewrites every object. `--lookback-minutes`
 (default 5) widens the incremental cutoff so objects touched around the last
-run are retried.
+run are retried. `--log-level DEBUG|INFO|WARNING|ERROR` (default `INFO`)
+configures the CLI logger. Importing the library does not attach handlers;
+the host process owns logging.
 
 ## Library
 
@@ -85,3 +87,9 @@ make up-db
 make test-integration
 make down-db
 ```
+
+## Release
+
+Push a tag `vX.Y.Z` that matches `version` in `pyproject.toml` and
+`__version__` in `src/oracle_db_unloader/__init__.py`. The Release workflow
+runs tests, builds sdist/wheel, and publishes to PyPI with Trusted Publishing.
