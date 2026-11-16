@@ -79,8 +79,8 @@ output_dir/
 ```
 
 The tree is reused across runs (no timestamp folder) so git and incremental
-unloads work. Table and materialized-view files get an LLM comment header with
-a bucketed `dba_tables.num_rows` label and a compact partition template
+unloads work. Table and materialized-view files get a comment header with a
+bucketed `dba_tables.num_rows` label and a compact partition template
 (no per-partition lists). Custom `*.sql` SELECTs are always re-run and written
 as GitHub-flavored tables under `dml/`.
 

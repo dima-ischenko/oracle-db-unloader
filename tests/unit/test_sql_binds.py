@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from oracle_db_unloader.resources import SQL_DIR, bind_params, split_statements
+from oracle_db_unloader.resources import (
+    SQL_DIR,
+    bind_params,
+    split_statements,
+    strip_owner_qualifiers,
+)
 
 SQLPLUS_MARKERS = ('define ', 'spool ', '&1', '&v_', 'prompt ')
 
@@ -47,3 +52,13 @@ def test_split_statements_on_slash():
 def test_sql_dir_is_packaged():
     assert Path(SQL_DIR).is_dir()
     assert (SQL_DIR / 'set_transform_params.sql').is_file()
+    transform = (SQL_DIR / 'set_transform_params.sql').read_text(encoding='utf-8')
+    assert 'EMIT_SCHEMA' in transform
+
+
+def test_strip_owner_qualifiers():
+    ddl = 'create table "SCOTT"."EMP" (\n  id number\n)\n'
+    assert strip_owner_qualifiers(ddl, 'SCOTT') == 'create table "EMP" (\n  id number\n)\n'
+    source = 'create or replace package SCOTT.PKG_DEMO as\nend;\n'
+    assert 'SCOTT.' not in strip_owner_qualifiers(source, 'SCOTT')
+    assert 'package PKG_DEMO' in strip_owner_qualifiers(source, 'SCOTT')

@@ -8,7 +8,7 @@ from oracle_db_unloader.inventory import DbObject
 from oracle_db_unloader.metadata import (
     PartitionInfo,
     SubpartitionTemplate,
-    format_llm_header,
+    format_file_header,
     format_partition_header_lines,
     format_partition_template_block,
     row_count_label,
@@ -65,7 +65,7 @@ def test_compact_partition_comment():
     assert 'values less than' not in block
 
 
-def test_llm_header_includes_rows_and_partition():
+def test_file_header_includes_rows_and_partition():
     obj = DbObject(
         schema='RPD',
         owner='RPD',
@@ -81,8 +81,9 @@ def test_llm_header_includes_rows_and_partition():
         subpart_key='source_id',
         template=tuple(SubpartitionTemplate(f's{i}', str(i)) for i in range(1, 10)),
     )
-    header = format_llm_header(obj, 12_000_000, info)
-    assert '-- object: TABLE RPD.RPD_LOAN_DAILY' in header
+    header = format_file_header(obj, 12_000_000, info)
+    assert '-- object:' not in header
+    assert 'RPD_LOAN_DAILY' not in header
     assert '-- rows: 10M' in header
     assert '-- last_ddl: 2026-11-01 12:00:00' in header
     assert 'RANGE (reporting_day)' in header

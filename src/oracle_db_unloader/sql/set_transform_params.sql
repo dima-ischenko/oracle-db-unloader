@@ -8,4 +8,5 @@ begin
   dbms_metadata.set_transform_param(dbms_metadata.session_transform, 'REF_CONSTRAINTS', true);
   dbms_metadata.set_transform_param(dbms_metadata.session_transform, 'TABLESPACE', false);
   dbms_metadata.set_transform_param(dbms_metadata.session_transform, 'PARTITIONING', false);
+  dbms_metadata.set_transform_param(dbms_metadata.session_transform, 'EMIT_SCHEMA', false);
 end;

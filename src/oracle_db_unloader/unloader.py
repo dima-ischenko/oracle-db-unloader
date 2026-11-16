@@ -25,10 +25,16 @@ from .logger import get_logger
 from .metadata import (
     fetch_num_rows,
     fetch_partition_info,
-    format_llm_header,
+    format_file_header,
     format_partition_template_block,
 )
-from .resources import bind_params, concat_ddl, load_sql, split_statements
+from .resources import (
+    bind_params,
+    concat_ddl,
+    load_sql,
+    split_statements,
+    strip_owner_qualifiers,
+)
 from .state import get_last_unload_at, load_state, save_state, set_last_unload_at
 
 logger = get_logger(__name__)
@@ -52,7 +58,7 @@ def fetch_object_ddl(conn: Connection, obj: DbObject) -> str:
             continue
         for row in result:
             parts.append(row[0])
-    ddl = concat_ddl(parts)
+    ddl = strip_owner_qualifiers(concat_ddl(parts), obj.owner)
     if obj.object_type in SOURCE_TYPES:
         stripped = ddl.rstrip()
         if not stripped.endswith('/'):
@@ -69,7 +75,7 @@ def write_object(engine: Engine, obj: DbObject, output_dir: Path) -> None:
         if obj.object_type in HEADER_TYPES:
             num_rows = fetch_num_rows(conn, obj)
             partition = fetch_partition_info(conn, obj)
-            header = format_llm_header(obj, num_rows, partition)
+            header = format_file_header(obj, num_rows, partition)
             footer = format_partition_template_block(obj.name, partition)
         content = header + ddl
         if footer:

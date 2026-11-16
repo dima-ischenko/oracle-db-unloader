@@ -52,10 +52,16 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
         assert path.is_file(), path
 
     table_sql = table.read_text(encoding='utf-8')
-    assert '-- object: TABLE TEST.EMP_HEAP' in table_sql
+    assert '-- object:' not in table_sql
     assert '-- rows: 1K' in table_sql
     assert '-- last_ddl:' in table_sql
     assert 'comment on table emp_heap' in table_sql.lower()
+    lowered = table_sql.lower()
+    assert 'create table test.' not in lowered
+    assert 'create table emp_heap' in lowered or 'create table "emp_heap"' in lowered
+    pkg_sql = pkg_s.read_text(encoding='utf-8').lower()
+    assert 'create or replace package test.' not in pkg_sql
+    assert 'create or replace package pkg_demo' in pkg_sql
 
     sales_sql = sales.read_text(encoding='utf-8').lower()
     assert '-- rows:' in sales.read_text(encoding='utf-8')

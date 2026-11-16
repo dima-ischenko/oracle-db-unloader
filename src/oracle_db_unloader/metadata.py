@@ -105,13 +105,12 @@ def format_partition_template_block(
     return '\n'.join(lines)
 
 
-def format_llm_header(
+def format_file_header(
     obj: DbObject,
     num_rows: Optional[int],
     partition: Optional[PartitionInfo],
 ) -> str:
     lines = [
-        f'-- object: {obj.object_type} {obj.owner}.{obj.name}',
         f'-- rows: {row_count_label(num_rows)}',
         f'-- last_ddl: {format_last_ddl(obj.last_ddl_time)}',
     ]

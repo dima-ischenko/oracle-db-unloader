@@ -47,6 +47,18 @@ def as_text(value: Any) -> str:
     return str(value)
 
 
+def strip_owner_qualifiers(ddl: str, owner: str) -> str:
+    """Drop schema qualifiers; the output path already names the schema."""
+    if not ddl or not owner:
+        return ddl
+    quoted = re.compile(re.escape(f'"{owner}"') + r'\.', re.IGNORECASE)
+    unquoted = re.compile(
+        r'(?<![\w"])' + re.escape(owner) + r'\.',
+        re.IGNORECASE,
+    )
+    return unquoted.sub('', quoted.sub('', ddl))
+
+
 def concat_ddl(parts: Iterable[Any]) -> str:
     chunks: List[str] = []
     for part in parts:
