@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from oracle_db_unloader import unload
+from oracle_db_unloader.inventory import normalize_ddl_time
 from oracle_db_unloader.state import get_last_unload_at, load_state
 
 
@@ -53,8 +54,8 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
 
     table_sql = table.read_text(encoding='utf-8')
     assert '-- object:' not in table_sql
-    assert '-- rows: 1K' in table_sql
-    assert '-- last_ddl:' in table_sql
+    assert '-- rows:' not in table_sql
+    assert '-- last_ddl:' not in table_sql
     assert 'comment on table emp_heap' in table_sql.lower()
     lowered = table_sql.lower()
     assert 'create table test.' not in lowered
@@ -64,7 +65,8 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert 'create or replace package pkg_demo' in pkg_sql
 
     sales_sql = sales.read_text(encoding='utf-8').lower()
-    assert '-- rows:' in sales.read_text(encoding='utf-8')
+    assert '-- rows:' not in sales.read_text(encoding='utf-8')
+    assert '-- last_ddl:' not in sales.read_text(encoding='utf-8')
     assert 'partitioned: range' in sales_sql
     assert 'interval' in sales_sql
     assert 'list subpart' in sales_sql
@@ -80,8 +82,22 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert 'null' in dml_text
 
     state = load_state(tmp_path)
-    assert get_last_unload_at(state, 'TEST', 'TABLE') is not None
-    assert get_last_unload_at(state, 'TEST', 'VIEW') is not None
+    table_stamp = get_last_unload_at(state, 'TEST', 'TABLE')
+    view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
+    assert table_stamp is not None
+    assert view_stamp is not None
+    with fresh_schema.connect() as conn:
+        db_max = conn.execute(
+            text(
+                """
+                select max(cast(last_ddl_time as timestamp(9)))
+                  from dba_objects
+                 where owner = 'TEST'
+                   and object_type = 'TABLE'
+                """
+            )
+        ).scalar()
+    assert normalize_ddl_time(table_stamp) == normalize_ddl_time(db_max)
 
 
 def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
@@ -138,7 +154,6 @@ def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
     view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
     assert table_stamp is not None
     assert view_stamp is not None
-    assert table_stamp >= view_stamp
 
     _unload(fresh_schema, tmp_path, object_types=['VIEW'])
     assert not view.exists()

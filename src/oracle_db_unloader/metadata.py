@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import List, Optional, Sequence
 
 from sqlalchemy import text
@@ -9,15 +8,6 @@ from sqlalchemy.engine import Connection
 
 from .inventory import DbObject
 from .resources import bind_params, load_sql
-
-ROW_BUCKETS = (
-    (1_000, '1K'),
-    (10_000, '10K'),
-    (100_000, '100K'),
-    (1_000_000, '1M'),
-    (10_000_000, '10M'),
-    (100_000_000, '100M'),
-)
 
 
 @dataclass(frozen=True)
@@ -34,27 +24,6 @@ class PartitionInfo:
     subpartitioning_type: Optional[str] = None
     subpart_key: Optional[str] = None
     template: Sequence[SubpartitionTemplate] = field(default_factory=tuple)
-
-
-def row_count_label(num_rows: Optional[int]) -> str:
-    if num_rows is None:
-        return 'unknown'
-    n = int(num_rows)
-    if n > 100_000_000:
-        return '100M+'
-    label = '1K'
-    for threshold, name in ROW_BUCKETS:
-        if n >= threshold:
-            label = name
-        else:
-            break
-    return label
-
-
-def format_last_ddl(value: Optional[datetime]) -> str:
-    if value is None:
-        return 'unknown'
-    return value.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def format_partition_header_lines(info: Optional[PartitionInfo]) -> List[str]:
@@ -105,26 +74,11 @@ def format_partition_template_block(
     return '\n'.join(lines)
 
 
-def format_file_header(
-    obj: DbObject,
-    num_rows: Optional[int],
-    partition: Optional[PartitionInfo],
-) -> str:
-    lines = [
-        f'-- rows: {row_count_label(num_rows)}',
-        f'-- last_ddl: {format_last_ddl(obj.last_ddl_time)}',
-    ]
-    lines.extend(format_partition_header_lines(partition))
+def format_file_header(partition: Optional[PartitionInfo]) -> str:
+    lines = format_partition_header_lines(partition)
+    if not lines:
+        return ''
     return '\n'.join(lines) + '\n\n'
-
-
-def fetch_num_rows(conn: Connection, obj: DbObject) -> Optional[int]:
-    sql = load_sql('table_stats.sql')
-    params = bind_params(sql, {'schema': obj.owner, 'obj_name': obj.name})
-    row = conn.execute(text(sql), params).first()
-    if row is None or row[0] is None:
-        return None
-    return int(row[0])
 
 
 def fetch_partition_info(conn: Connection, obj: DbObject) -> Optional[PartitionInfo]:

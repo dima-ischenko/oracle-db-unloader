@@ -90,12 +90,6 @@ CREATE_STATEMENTS = [
     """,
     "insert into currency_dict (code, name) values ('USD', 'US Dollar')",
     "insert into currency_dict (code, name) values ('EUR', null)",
-    """
-    begin
-      dbms_stats.gather_table_stats(user, 'EMP_HEAP');
-      dbms_stats.gather_table_stats(user, 'SALES_PART');
-    end;
-    """,
 ]
 
 

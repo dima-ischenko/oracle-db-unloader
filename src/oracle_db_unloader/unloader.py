@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
@@ -17,13 +17,13 @@ from .inventory import (
     UNLOAD_SQL,
     DbObject,
     fetch_inventory,
+    next_watermark,
     normalize_object_types,
     plan_actions,
     walk_schema_files,
 )
 from .logger import get_logger
 from .metadata import (
-    fetch_num_rows,
     fetch_partition_info,
     format_file_header,
     format_partition_template_block,
@@ -73,9 +73,8 @@ def write_object(engine: Engine, obj: DbObject, output_dir: Path) -> None:
         header = ''
         footer = ''
         if obj.object_type in HEADER_TYPES:
-            num_rows = fetch_num_rows(conn, obj)
             partition = fetch_partition_info(conn, obj)
-            header = format_file_header(obj, num_rows, partition)
+            header = format_file_header(partition)
             footer = format_partition_template_block(obj.name, partition)
         content = header + ddl
         if footer:
@@ -166,7 +165,6 @@ def unload_schema(
     *,
     object_types: Sequence[str],
     state: Dict[str, Any],
-    run_start: datetime,
     lookback_minutes: int,
     max_connections: int,
     full: bool,
@@ -197,9 +195,19 @@ def unload_schema(
             logger.exception('schema %s type %s failed', schema, object_type)
             type_errors.append((object_type, exc))
         else:
-            state = set_last_unload_at(state, schema, run_start, object_type)
-            save_state(output_dir, state)
-            logger.info('schema %s type %s: done', schema, object_type)
+            watermark = next_watermark(
+                get_last_unload_at(state, schema, object_type),
+                by_type[object_type],
+            )
+            if watermark is not None:
+                state = set_last_unload_at(state, schema, watermark, object_type)
+                save_state(output_dir, state)
+            logger.info(
+                'schema %s type %s: done watermark=%s',
+                schema,
+                object_type,
+                watermark.isoformat() if watermark else 'none',
+            )
     if type_errors:
         names = ', '.join(object_type for object_type, _exc in type_errors)
         raise UnloadError(f'failed to unload type(s) in {schema}: {names}')
@@ -215,7 +223,7 @@ def unload(
     custom_sql_dir: Union[str, Path, None] = None,
     object_types: Optional[Sequence[str]] = None,
     full: bool = False,
-    lookback_minutes: int = 5,
+    lookback_minutes: int = 0,
 ) -> None:
     """Unload schema objects using a caller-owned SQLAlchemy engine.
 
@@ -228,7 +236,6 @@ def unload(
     type_list = normalize_object_types(object_types)
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
-    run_start = datetime.now(timezone.utc)
     started = time.perf_counter()
     logger.info(
         'unload start schemas=%s object_types=%s output_dir=%s full=%s '
@@ -251,7 +258,6 @@ def unload(
                 target,
                 object_types=type_list,
                 state=state,
-                run_start=run_start,
                 lookback_minutes=lookback_minutes,
                 max_connections=max_connections,
                 full=full,

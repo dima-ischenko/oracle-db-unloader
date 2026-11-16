@@ -20,7 +20,7 @@ def test_parse_db_url_and_defaults():
     assert args.schemas == 'scott,hr'
     assert args.output_dir == '/tmp/ddl'
     assert args.max_connections == 5
-    assert args.lookback_minutes == 5
+    assert args.lookback_minutes == 0
     assert args.full is False
     assert args.custom_sql_dir is None
     assert args.log_level == 'INFO'

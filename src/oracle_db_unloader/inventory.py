@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -139,12 +139,42 @@ def object_relpath(schema: str, name: str, object_type: str) -> str:
     return f'{schema.lower()}/{folder}/{filename}'
 
 
-def as_utc(value: Optional[datetime]) -> Optional[datetime]:
+def normalize_ddl_time(value: Optional[datetime]) -> Optional[datetime]:
+    """Keep Oracle last_ddl_time as a naive timestamp with full precision.
+
+    Do not assume UTC: the watermark must live in the same clock as
+    ``dba_objects.last_ddl_time``.
+    """
     if value is None:
         return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    if value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def max_last_ddl_time(objects: Iterable[DbObject]) -> Optional[datetime]:
+    times = [
+        normalize_ddl_time(obj.last_ddl_time)
+        for obj in objects
+        if obj.last_ddl_time is not None
+    ]
+    times = [item for item in times if item is not None]
+    if not times:
+        return None
+    return max(times)
+
+
+def next_watermark(
+    previous: Optional[datetime],
+    objects: Iterable[DbObject],
+) -> Optional[datetime]:
+    current = max_last_ddl_time(objects)
+    prev = normalize_ddl_time(previous)
+    if current is None:
+        return prev
+    if prev is None:
+        return current
+    return max(prev, current)
 
 
 def plan_actions(
@@ -156,7 +186,9 @@ def plan_actions(
     object_list = list(objects)
     cutoff = None
     if last_unload_at is not None:
-        cutoff = as_utc(last_unload_at) - timedelta(minutes=lookback_minutes)
+        cutoff = normalize_ddl_time(last_unload_at)
+        if cutoff is not None and lookback_minutes:
+            cutoff = cutoff - timedelta(minutes=lookback_minutes)
 
     to_write: List[DbObject] = []
     known_paths = {obj.relpath for obj in object_list}
@@ -165,8 +197,8 @@ def plan_actions(
         if cutoff is None or missing:
             to_write.append(obj)
             continue
-        ddl_time = as_utc(obj.last_ddl_time)
-        if ddl_time is None or ddl_time >= cutoff:
+        ddl_time = normalize_ddl_time(obj.last_ddl_time)
+        if ddl_time is None or ddl_time > cutoff:
             to_write.append(obj)
 
     to_delete = {path for path in disk_relpaths if path not in known_paths}

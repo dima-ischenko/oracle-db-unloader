@@ -6,7 +6,7 @@ select owner,
         select o.owner,
                o.object_name,
                o.object_type,
-               o.last_ddl_time
+               cast(o.last_ddl_time as timestamp(9)) as last_ddl_time
           from dba_objects o
          where o.owner = upper(:schema)
            and o.object_type in (
@@ -37,7 +37,7 @@ select owner,
         select s.owner,
                s.synonym_name as object_name,
                'SYNONYM' as object_type,
-               o.last_ddl_time
+               cast(o.last_ddl_time as timestamp(9)) as last_ddl_time
           from dba_synonyms s
           join dba_objects o
             on o.owner = s.owner

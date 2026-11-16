@@ -53,8 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
         '--lookback-minutes',
         dest='lookback_minutes',
         type=int,
-        default=5,
-        help='Widen incremental cutoff by this many minutes (default: 5)',
+        default=0,
+        help='Widen incremental cutoff by this many minutes (default: 0)',
     )
     parser.add_argument(
         '--log-level',

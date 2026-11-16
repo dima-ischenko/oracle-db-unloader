@@ -1,40 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-import pytest
-
-from oracle_db_unloader.inventory import DbObject
 from oracle_db_unloader.metadata import (
     PartitionInfo,
     SubpartitionTemplate,
     format_file_header,
     format_partition_header_lines,
     format_partition_template_block,
-    row_count_label,
 )
-
-
-@pytest.mark.parametrize(
-    'num_rows, expected',
-    [
-        (None, 'unknown'),
-        (0, '1K'),
-        (999, '1K'),
-        (1_000, '1K'),
-        (9_999, '1K'),
-        (10_000, '10K'),
-        (99_999, '10K'),
-        (100_000, '100K'),
-        (1_000_000, '1M'),
-        (10_000_000, '10M'),
-        (100_000_000, '100M'),
-        (100_000_001, '100M+'),
-        (5_000_000_000, '100M+'),
-    ],
-)
-def test_row_count_label(num_rows, expected):
-    assert row_count_label(num_rows) == expected
 
 
 def test_compact_partition_comment():
@@ -65,14 +37,7 @@ def test_compact_partition_comment():
     assert 'values less than' not in block
 
 
-def test_file_header_includes_rows_and_partition():
-    obj = DbObject(
-        schema='RPD',
-        owner='RPD',
-        name='RPD_LOAN_DAILY',
-        object_type='TABLE',
-        last_ddl_time=datetime(2026, 11, 1, 12, 0, 0),
-    )
+def test_file_header_is_partition_only():
     info = PartitionInfo(
         partitioning_type='RANGE',
         part_key='reporting_day',
@@ -81,10 +46,9 @@ def test_file_header_includes_rows_and_partition():
         subpart_key='source_id',
         template=tuple(SubpartitionTemplate(f's{i}', str(i)) for i in range(1, 10)),
     )
-    header = format_file_header(obj, 12_000_000, info)
-    assert '-- object:' not in header
-    assert 'RPD_LOAN_DAILY' not in header
-    assert '-- rows: 10M' in header
-    assert '-- last_ddl: 2026-11-01 12:00:00' in header
+    header = format_file_header(info)
+    assert '-- rows:' not in header
+    assert '-- last_ddl:' not in header
     assert 'RANGE (reporting_day)' in header
     assert 'template 9 values' in header
+    assert format_file_header(None) == ''

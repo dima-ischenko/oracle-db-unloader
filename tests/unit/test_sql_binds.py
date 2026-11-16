@@ -31,12 +31,6 @@ def test_inventory_and_metadata_sql_use_binds():
     assert '&' not in inventory
     assert split_statements(inventory) == [inventory.strip()]
 
-    stats = (SQL_DIR / 'table_stats.sql').read_text(encoding='utf-8')
-    assert bind_params(stats, {'schema': 'X', 'obj_name': 'T'}) == {
-        'schema': 'X',
-        'obj_name': 'T',
-    }
-
     part = (SQL_DIR / 'partition_info.sql').read_text(encoding='utf-8')
     assert ':schema' in part and ':obj_name' in part
 

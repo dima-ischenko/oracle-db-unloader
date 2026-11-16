@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
 from oracle_db_unloader.inventory import (
     ALL_OBJECT_TYPES,
     DbObject,
+    max_last_ddl_time,
+    next_watermark,
     normalize_object_types,
     object_relpath,
     plan_actions,
@@ -34,10 +36,10 @@ def test_object_relpath_suffixes():
 
 
 def test_plan_write_when_missing_or_changed():
-    stamp = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
-    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 0, tzinfo=timezone.utc))
-    pkg = _obj('PKG_X', 'PACKAGE', datetime(2026, 11, 16, 8, 10, tzinfo=timezone.utc))
-    view = _obj('V_EMP', 'VIEW', datetime(2026, 11, 16, 7, 0, tzinfo=timezone.utc))
+    stamp = datetime(2026, 11, 16, 8, 0, 0)
+    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 0, 0))
+    pkg = _obj('PKG_X', 'PACKAGE', datetime(2026, 11, 16, 8, 10, 0))
+    view = _obj('V_EMP', 'VIEW', datetime(2026, 11, 16, 7, 0, 0))
     objects = [emp, pkg, view]
     disk = {
         emp.relpath,
@@ -57,16 +59,28 @@ def test_plan_write_when_missing_or_changed():
     assert to_delete == {'scott/views/gone.sql'}
 
 
+def test_plan_equal_last_ddl_is_not_rewritten():
+    stamp = datetime(2026, 11, 16, 8, 0, 0, 123456)
+    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 8, 0, 0, 123456))
+    to_write, _to_delete = plan_actions(
+        [emp],
+        {emp.relpath},
+        last_unload_at=stamp,
+        lookback_minutes=0,
+    )
+    assert to_write == []
+
+
 def test_plan_full_when_no_watermark():
-    emp = _obj('EMP', 'TABLE', datetime(2020, 1, 1, tzinfo=timezone.utc))
+    emp = _obj('EMP', 'TABLE', datetime(2020, 1, 1))
     to_write, to_delete = plan_actions([emp], set(), None, lookback_minutes=5)
     assert to_write == [emp]
     assert to_delete == set()
 
 
 def test_plan_lookback_includes_recent_objects():
-    last = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
-    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 56, tzinfo=timezone.utc))
+    last = datetime(2026, 11, 16, 8, 0, 0)
+    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 56, 0))
     to_write, _to_delete = plan_actions(
         [emp],
         {emp.relpath},
@@ -74,6 +88,15 @@ def test_plan_lookback_includes_recent_objects():
         lookback_minutes=5,
     )
     assert to_write == [emp]
+
+
+def test_max_last_ddl_time_and_next_watermark():
+    older = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 0, 0, 1))
+    newer = _obj('DEPT', 'TABLE', datetime(2026, 11, 16, 8, 0, 0, 2))
+    assert max_last_ddl_time([older, newer]) == newer.last_ddl_time
+    previous = datetime(2026, 11, 16, 7, 30, 0)
+    assert next_watermark(previous, [older, newer]) == newer.last_ddl_time
+    assert next_watermark(newer.last_ddl_time, [older]) == newer.last_ddl_time
 
 
 def test_normalize_object_types_aliases_and_expand():

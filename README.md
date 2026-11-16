@@ -35,9 +35,11 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
 `--object-types` limits the run to selected Oracle types (`table`, `view`,
 `package`, `mview`, `function`, `procedure`, `trigger`, `type`, `sequence`,
 `synonym`). `package` and `type` include spec and body. Incremental watermarks
-are stored per schema and object type. `--full` ignores watermarks and rewrites
-every selected object. `--lookback-minutes` (default 5) widens the cutoff so
-objects touched around the last run are retried. `--log-level
+are stored per schema and object type as the max ``last_ddl_time`` actually
+seen in Oracle. The next run writes objects whose ``last_ddl_time`` is strictly
+greater than that watermark. `--full` ignores watermarks and rewrites every
+selected object. `--lookback-minutes` (default 0) can widen the cutoff.
+`--log-level
 DEBUG|INFO|WARNING|ERROR` (default `INFO`) configures the CLI logger. Importing
 the library does not attach handlers; the host process owns logging.
 
@@ -79,10 +81,9 @@ output_dir/
 ```
 
 The tree is reused across runs (no timestamp folder) so git and incremental
-unloads work. Table and materialized-view files get a comment header with a
-bucketed `dba_tables.num_rows` label and a compact partition template
-(no per-partition lists). Custom `*.sql` SELECTs are always re-run and written
-as GitHub-flavored tables under `dml/`.
+unloads work. Table and materialized-view files get a compact partition
+template (no per-partition lists). Custom `*.sql` SELECTs are always re-run
+and written as GitHub-flavored tables under `dml/`.
 
 ## Tests
 

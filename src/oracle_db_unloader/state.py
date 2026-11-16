@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from .inventory import normalize_ddl_time
 
 STATE_FILENAME = '.unloader_state.json'
 
@@ -30,10 +32,14 @@ def save_state(output_dir: Path, state: Dict[str, Any]) -> None:
 def _parse_timestamp(raw: Optional[str]) -> Optional[datetime]:
     if not raw:
         return None
-    value = datetime.fromisoformat(raw)
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return normalize_ddl_time(datetime.fromisoformat(raw))
+
+
+def _serialize_timestamp(value: datetime) -> str:
+    naive = normalize_ddl_time(value)
+    if naive is None:
+        raise ValueError('timestamp is required')
+    return naive.isoformat(timespec='microseconds')
 
 
 def get_last_unload_at(
@@ -43,13 +49,15 @@ def get_last_unload_at(
 ) -> Optional[datetime]:
     entry = (state.get('schemas') or {}).get(schema.upper()) or {}
     if object_type:
-        typed = ((entry.get('types') or {}).get(object_type) or {}).get(
-            'last_unload_at'
+        typed = (entry.get('types') or {}).get(object_type) or {}
+        parsed = _parse_timestamp(
+            typed.get('last_ddl_time') or typed.get('last_unload_at')
         )
-        parsed = _parse_timestamp(typed)
         if parsed is not None:
             return parsed
-    return _parse_timestamp(entry.get('last_unload_at'))
+    return _parse_timestamp(
+        entry.get('last_ddl_time') or entry.get('last_unload_at')
+    )
 
 
 def set_last_unload_at(
@@ -62,11 +70,7 @@ def set_last_unload_at(
     schema_key = schema.upper()
     entry = dict(schemas.get(schema_key) or {})
     types = dict(entry.get('types') or {})
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    else:
-        when = when.astimezone(timezone.utc)
-    types[object_type] = {'last_unload_at': when.isoformat()}
+    types[object_type] = {'last_ddl_time': _serialize_timestamp(when)}
     entry['types'] = types
     schemas[schema_key] = entry
     return {'schemas': schemas}
