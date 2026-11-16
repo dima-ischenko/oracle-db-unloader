@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oracle-db-unloader"
+version = "2.0.0"
+description = "Unload Oracle schema objects to SQL files via SQLAlchemy and oracledb."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Dmitriy Ishchenko", email = "hotmori@gmail.com"}
+]
+license = {text = "MIT"}
+keywords = ["oracle", "ddl", "sqlalchemy", "database"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "sqlalchemy>=2.0.0",
+    "oracledb>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dima-ischenko/oracle-db-unloader"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.15.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+lint = [
+    "ruff>=0.15.0",
+]
+
+[project.scripts]
+db-unloader = "oracle_db_unloader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+oracle_db_unloader = ["sql/*.sql"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.format]
+quote-style = "single"

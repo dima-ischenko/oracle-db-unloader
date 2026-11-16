@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from sqlalchemy import text
+
+from oracle_db_unloader import unload
+from oracle_db_unloader.state import get_last_unload_at, load_state
+
+
+def _unload(engine, tmp_path, custom_sql_dir=None, full=False, lookback_minutes=0):
+    unload(
+        engine,
+        schemas=['TEST'],
+        output_dir=tmp_path,
+        max_connections=2,
+        custom_sql_dir=custom_sql_dir,
+        full=full,
+        lookback_minutes=lookback_minutes,
+    )
+
+
+def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
+    time.sleep(1.1)
+    custom_dir = tmp_path / 'custom'
+    custom_dir.mkdir()
+    (custom_dir / 'currency.sql').write_text(
+        'select code, name from currency_dict order by code',
+        encoding='utf-8',
+    )
+    _unload(fresh_schema, tmp_path, custom_sql_dir=custom_dir)
+
+    table = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
+    sales = Path(tmp_path) / 'test' / 'tables' / 'sales_part.sql'
+    view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
+    pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
+    pkg_b = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_b.sql'
+    seq = Path(tmp_path) / 'test' / 'sequences' / 'seq_demo.sql'
+    syn = Path(tmp_path) / 'test' / 'synonyms' / 'syn_emp.sql'
+    dml = Path(tmp_path) / 'dml' / 'currency.txt'
+
+    for path in (table, sales, view, pkg_s, pkg_b, seq, syn, dml):
+        assert path.is_file(), path
+
+    table_sql = table.read_text(encoding='utf-8')
+    assert '-- object: TABLE TEST.EMP_HEAP' in table_sql
+    assert '-- rows: 1K' in table_sql
+    assert '-- last_ddl:' in table_sql
+    assert 'comment on table emp_heap' in table_sql.lower()
+
+    sales_sql = sales.read_text(encoding='utf-8').lower()
+    assert '-- rows:' in sales.read_text(encoding='utf-8')
+    assert 'partitioned: range' in sales_sql
+    assert 'interval' in sales_sql
+    assert 'list subpart' in sales_sql
+    assert 'template 3 values' in sales_sql
+    assert 'partition p2024' not in sales_sql
+    assert 'p202401' not in sales_sql
+    assert 'values less than' not in sales_sql.split('/*')[0]
+    assert 'subpartition template' in sales_sql
+
+    dml_text = dml.read_text(encoding='utf-8')
+    assert dml_text.splitlines()[0].startswith('||')
+    assert 'USD' in dml_text
+    assert 'null' in dml_text
+
+    state = load_state(tmp_path)
+    assert get_last_unload_at(state, 'TEST') is not None
+
+
+def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path)
+
+    pkg = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
+    emp = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
+    view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
+    pkg_before = pkg.read_text(encoding='utf-8')
+    emp_before = emp.read_text(encoding='utf-8')
+    emp_mtime = emp.stat().st_mtime
+
+    with fresh_schema.begin() as conn:
+        conn.execute(
+            text(
+                """
+                create or replace package pkg_demo as
+                  function ping return number;
+                  function pong return number;
+                end pkg_demo;
+                """
+            )
+        )
+        conn.execute(text('drop view emp_v'))
+
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path)
+
+    pkg_after = pkg.read_text(encoding='utf-8')
+    assert 'pong' in pkg_after.lower()
+    assert pkg_after != pkg_before
+    assert emp.read_text(encoding='utf-8') == emp_before
+    assert emp.stat().st_mtime == emp_mtime
+    assert not view.exists()

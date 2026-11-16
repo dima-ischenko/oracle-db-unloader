@@ -1,0 +1,20 @@
+services:
+  oracle:
+    image: gvenzl/oracle-free:23.26.1-slim-faststart
+    container_name: oracle
+    platform: linux/amd64
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: test_pass
+      APP_USER: test
+      APP_USER_PASSWORD: test_pass
+    shm_size: 1g
+    volumes:
+      - ./oracle/init.sql:/container-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
