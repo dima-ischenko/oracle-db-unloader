@@ -117,15 +117,15 @@ def custom_sql_roots(
     return roots
 
 
-def _warn_legacy_flat_sql(root: Path) -> None:
-    legacy = sorted(path for path in Path(root).glob('*.sql') if path.is_file())
-    if not legacy:
+def _warn_top_level_sql(root: Path) -> None:
+    stray = sorted(path for path in Path(root).glob('*.sql') if path.is_file())
+    if not stray:
         return
-    example = legacy[0].name
+    example = stray[0].name
     logger.warning(
         'custom sql ignored top-level %s under %s; put scripts in _<dir>/ '
         '(e.g. _meta/%s)',
-        ', '.join(path.name for path in legacy),
+        ', '.join(path.name for path in stray),
         root,
         example,
     )
@@ -186,7 +186,7 @@ def dump_custom_sql(
             if custom_sql_dir is not None and root == Path(custom_sql_dir):
                 raise FileNotFoundError(f'custom SQL directory not found: {root}')
             continue
-        _warn_legacy_flat_sql(root)
+        _warn_top_level_sql(root)
         for path, rel in discover_custom_sql(root):
             if rel in seen_rel:
                 continue

@@ -102,8 +102,7 @@ output_dir/
 
 The tree is reused across runs (no timestamp folder) so git and incremental
 unloads work. Incremental watermarks live in each schema folder as
-`.unloader_state.json`. A leftover root `.unloader_state.json` is split on
-the next save. Table and materialized-view files get an `alter table ... modify
+`.unloader_state.json`. Table and materialized-view files get an `alter table ... modify`
 partition by ...` statement (template only, no per-partition lists). Custom
 `_*/` SELECT scripts are always re-run with `:schema`. Shared scripts write
 under every schema; `<schema>/_meta/*.sql` writes only to that schema.
