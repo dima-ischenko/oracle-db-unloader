@@ -11,7 +11,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from .dml import dump_custom_sql
-from .engine import apply_session_transforms
 from .inventory import (
     HEADER_TYPES,
     SOURCE_TYPES,
@@ -41,6 +40,11 @@ from .resources import (
 from .state import get_last_unload_at, load_state, save_state, set_last_unload_at
 
 logger = get_logger(__name__)
+
+
+def apply_session_transforms(conn: Connection) -> None:
+    """Set dbms_metadata session transforms on an open connection."""
+    conn.exec_driver_sql(load_sql('set_transform_params.sql'))
 
 
 class UnloadError(RuntimeError):

@@ -1,5 +1,4 @@
-from .engine import create_unloader_engine
 from .unloader import UnloadError, unload
 
-__all__ = ['unload', 'UnloadError', 'create_unloader_engine']
+__all__ = ['unload', 'UnloadError']
 __version__ = '2.0.0'

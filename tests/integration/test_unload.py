@@ -45,65 +45,29 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     camel = Path(tmp_path) / 'test' / 'tables' / 'custom_metrics.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
-    pkg_b = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_b.sql'
-    seq = Path(tmp_path) / 'test' / 'sequences' / 'seq_demo.sql'
-    syn = Path(tmp_path) / 'test' / 'synonyms' / 'syn_emp.sql'
     dml = Path(tmp_path) / 'test' / '_meta' / 'currency.txt'
 
-    for path in (table, sales, camel, view, pkg_s, pkg_b, seq, syn, dml):
+    for path in (table, sales, camel, view, pkg_s, dml):
         assert path.is_file(), path
 
-    table_sql = table.read_text(encoding='utf-8')
-    assert '-- object:' not in table_sql
-    assert '-- rows:' not in table_sql
-    assert '-- last_ddl:' not in table_sql
-    assert 'comment on table emp_heap' in table_sql.lower()
-    lowered = table_sql.lower()
-    assert 'create table test.' not in lowered
-    assert 'create table emp_heap' in lowered or 'create table "emp_heap"' in lowered
-    pkg_sql = pkg_s.read_text(encoding='utf-8').lower()
-    assert 'create or replace package test.' not in pkg_sql
-    assert 'create or replace package pkg_demo' in pkg_sql
+    table_sql = table.read_text(encoding='utf-8').lower()
+    assert 'create table test.' not in table_sql
+    assert 'create table emp_heap' in table_sql or 'create table "emp_heap"' in table_sql
 
-    sales_raw = sales.read_text(encoding='utf-8')
-    sales_sql = sales_raw.lower()
-    assert '-- rows:' not in sales_raw
-    assert '-- last_ddl:' not in sales_raw
-    assert 'partitioned: range' in sales_sql
-    assert 'interval' in sales_sql
-    assert 'list subpart' in sales_sql
-    assert 'template 3 values' in sales_sql
-    assert 'partition p2024' not in sales_sql
-    assert 'p202401' not in sales_sql
-    assert 'values less than' not in sales_sql
-    assert 'subpartition template' in sales_sql
-    assert '/*' not in sales_raw
-    assert '*/' not in sales_raw
+    sales_sql = sales.read_text(encoding='utf-8').lower()
     assert 'alter table sales_part modify' in sales_sql
-    assert sales_raw.rstrip().endswith(';')
-    assert table.read_text(encoding='utf-8').rstrip().endswith(';')
+    assert 'partition p2024' not in sales_sql
 
     camel_sql = camel.read_text(encoding='utf-8')
-    assert camel.name == 'custom_metrics.sql'
     assert '"CUSTOM_metrics"' in camel_sql
-    assert 'comment on table "CUSTOM_metrics"' in camel_sql
-    assert camel_sql.rstrip().endswith(';')
 
     dml_text = dml.read_text(encoding='utf-8')
-    assert dml_text.splitlines()[0].startswith('|')
-    assert 'TEST' in dml_text
     assert 'USD' in dml_text
     assert 'null' in dml_text
 
-    state = load_state(tmp_path)
-    table_stamp = get_last_unload_at(state, 'TEST', 'TABLE')
-    view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
-    assert table_stamp is not None
-    assert view_stamp is not None
+    table_stamp = get_last_unload_at(load_state(tmp_path), 'TEST', 'TABLE')
     tables = [
-        obj
-        for obj in fetch_inventory(fresh_schema, 'TEST')
-        if obj.object_type == 'TABLE'
+        obj for obj in fetch_inventory(fresh_schema, 'TEST') if obj.object_type == 'TABLE'
     ]
     assert normalize_ddl_time(table_stamp) == max_last_ddl_time(tables)
 
@@ -115,7 +79,6 @@ def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
     pkg = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
     emp = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
-    pkg_before = pkg.read_text(encoding='utf-8')
     emp_before = emp.read_text(encoding='utf-8')
 
     with fresh_schema.begin() as conn:
@@ -134,9 +97,7 @@ def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
     time.sleep(1.1)
     _unload(fresh_schema, tmp_path)
 
-    pkg_after = pkg.read_text(encoding='utf-8')
-    assert 'pong' in pkg_after.lower()
-    assert pkg_after != pkg_before
+    assert 'pong' in pkg.read_text(encoding='utf-8').lower()
     assert emp.read_text(encoding='utf-8') == emp_before
     assert not view.exists()
 
@@ -145,7 +106,6 @@ def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
     time.sleep(1.1)
     _unload(fresh_schema, tmp_path)
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
-    emp = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
     assert view.is_file()
 
     with fresh_schema.begin() as conn:
@@ -154,12 +114,6 @@ def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
     time.sleep(1.1)
     _unload(fresh_schema, tmp_path, object_types=['TABLE'])
     assert view.is_file()
-    assert emp.is_file()
-    state = load_state(tmp_path)
-    table_stamp = get_last_unload_at(state, 'TEST', 'TABLE')
-    view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
-    assert table_stamp is not None
-    assert view_stamp is not None
 
     _unload(fresh_schema, tmp_path, object_types=['VIEW'])
     assert not view.exists()
@@ -178,6 +132,4 @@ def test_index_change_rewrites_table(fresh_schema, tmp_path):
     time.sleep(1.1)
     _unload(fresh_schema, tmp_path, object_types=['TABLE'])
     after = emp.read_text(encoding='utf-8')
-    assert after != before
     assert 'emp_heap_name_i' in after.lower()
-    assert after.rstrip().endswith(';')

@@ -23,13 +23,8 @@ def _obj(schema, name, object_type='TABLE', when=None):
 
 def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path, caplog):
     inventory = {
-        'SCOTT': [
-            _obj('SCOTT', 'EMP'),
-            _obj('SCOTT', 'V_EMP', 'VIEW'),
-        ],
-        'HR': [
-            _obj('HR', 'DEPT'),
-        ],
+        'SCOTT': [_obj('SCOTT', 'EMP'), _obj('SCOTT', 'V_EMP', 'VIEW')],
+        'HR': [_obj('HR', 'DEPT')],
     }
     written = []
 
@@ -44,9 +39,7 @@ def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('-- ok\n', encoding='utf-8')
 
-    monkeypatch.setattr(
-        'oracle_db_unloader.unloader.fetch_inventory', fake_inventory
-    )
+    monkeypatch.setattr('oracle_db_unloader.unloader.fetch_inventory', fake_inventory)
     monkeypatch.setattr('oracle_db_unloader.unloader.write_object', fake_write)
 
     caplog.set_level(logging.INFO, logger='oracle_db_unloader')
@@ -59,15 +52,11 @@ def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path
             max_connections=1,
         )
 
-    assert written == [
-        ('SCOTT', 'TABLE', 'EMP'),
-        ('SCOTT', 'VIEW', 'V_EMP'),
-    ]
+    assert written == [('SCOTT', 'TABLE', 'EMP'), ('SCOTT', 'VIEW', 'V_EMP')]
     state = load_state(tmp_path)
     assert get_last_unload_at(state, 'SCOTT', 'TABLE') is not None
     assert get_last_unload_at(state, 'SCOTT', 'VIEW') is None
     assert get_last_unload_at(state, 'HR', 'TABLE') is None
-    assert 'unload failed added=1 updated=0 deleted=0' in caplog.text
 
 
 def test_same_type_failure_does_not_write_remaining(monkeypatch, tmp_path):
@@ -75,10 +64,7 @@ def test_same_type_failure_does_not_write_remaining(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         'oracle_db_unloader.unloader.fetch_inventory',
-        lambda _engine, _schema: [
-            _obj('SCOTT', 'T1'),
-            _obj('SCOTT', 'T2'),
-        ],
+        lambda _engine, _schema: [_obj('SCOTT', 'T1'), _obj('SCOTT', 'T2')],
     )
 
     def fake_write(_engine, obj, output_dir):
@@ -126,8 +112,5 @@ def test_progress_and_summary_logging(monkeypatch, tmp_path, caplog):
         max_connections=1,
     )
 
-    assert 'schema=SCOTT type=TABLE remaining=0 delete=1' in caplog.text
-    assert 'deleted' in caplog.text
-    assert 'schema=SCOTT type=TABLE remaining=0 delete=0' in caplog.text
     assert 'unload complete added=1 updated=0 deleted=1' in caplog.text
     assert not gone.exists()

@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import sys
 from typing import Optional, Sequence
+from urllib.parse import quote_plus
 
-from .engine import build_url, create_unloader_engine
+from sqlalchemy import create_engine
+
 from .inventory import normalize_object_types
 from .logger import configure_logging, get_logger
 from .unloader import UnloadError, unload
@@ -105,16 +107,36 @@ def _split_csv(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(',') if part.strip()]
 
 
+def _build_url(
+    url: str | None = None,
+    db_login: str | None = None,
+    db_pass: str | None = None,
+    db_tns: str | None = None,
+) -> str:
+    if url:
+        return url
+    if db_login and db_pass and db_tns:
+        user = quote_plus(db_login)
+        password = quote_plus(db_pass)
+        return f'oracle+oracledb://{user}:{password}@{db_tns}'
+    raise ValueError('Provide url or db_login, db_pass, and db_tns')
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     configure_logging(args.log_level)
-    url = build_url(
+    url = _build_url(
         url=args.db_url,
         db_login=args.db_login,
         db_pass=args.db_pass,
         db_tns=args.db_tns,
     )
-    engine = create_unloader_engine(url, max_connections=args.max_connections)
+    engine = create_engine(
+        url,
+        pool_size=args.max_connections,
+        max_overflow=0,
+        pool_pre_ping=True,
+    )
     try:
         unload(
             engine,

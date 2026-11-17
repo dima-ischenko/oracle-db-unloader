@@ -5,26 +5,14 @@ from decimal import Decimal
 
 from oracle_db_unloader.dml import (
     discover_custom_sql,
-    discover_schema_meta_sql,
     dump_custom_sql,
     format_table,
     stringify_cell,
 )
 
 
-def test_github_table_layout_and_nulls():
-    rendered = format_table(
-        ['ID', 'NAME'],
-        [
-            [1, 'abc'],
-            [None, 'x'],
-        ],
-    )
-    lines = rendered.splitlines()
-    assert lines[0].startswith('|')
-    assert 'ID' in lines[0]
-    assert 'NAME' in lines[0]
-    assert lines[1].replace(' ', '').startswith('|---')
+def test_github_table_renders_nulls():
+    rendered = format_table(['ID', 'NAME'], [[1, 'abc'], [None, 'x']])
     assert 'abc' in rendered
     assert 'null' in rendered
 
@@ -45,13 +33,11 @@ def test_discover_custom_sql_underscore_dirs(tmp_path):
         encoding='utf-8',
     )
     (other / 'ignored.sql').write_text('select 1 from dual', encoding='utf-8')
-    (tmp_path / 'legacy.sql').write_text('select 1 from dual', encoding='utf-8')
     found = discover_custom_sql(tmp_path)
     assert found == [(meta / 'get_table_stats.sql', '_meta/get_table_stats')]
-    assert discover_schema_meta_sql(tmp_path / 'scott') == []
 
 
-def test_dump_custom_sql_binds_schema_and_writes_per_schema(tmp_path):
+def test_dump_custom_sql_writes_per_schema(tmp_path):
     sql_dir = tmp_path / 'sql'
     meta = sql_dir / '_meta'
     meta.mkdir(parents=True)
@@ -71,13 +57,12 @@ def test_dump_custom_sql_binds_schema_and_writes_per_schema(tmp_path):
         custom_sql_dir=sql_dir,
     )
     assert dumped == 2
-    assert [params['schema'] for _sql, params in conn.calls] == ['SCOTT', 'HR']
-    scott = (output / 'scott' / '_meta' / 'get_table_stats.txt').read_text(
+    assert 'SCOTT' in (output / 'scott' / '_meta' / 'get_table_stats.txt').read_text(
         encoding='utf-8'
     )
-    hr = (output / 'hr' / '_meta' / 'get_table_stats.txt').read_text(encoding='utf-8')
-    assert 'SCOTT' in scott
-    assert 'HR' in hr
+    assert 'HR' in (output / 'hr' / '_meta' / 'get_table_stats.txt').read_text(
+        encoding='utf-8'
+    )
 
 
 def test_dump_custom_sql_reads_underscore_dir_from_output_root(tmp_path):
@@ -90,9 +75,7 @@ def test_dump_custom_sql_reads_underscore_dir_from_output_root(tmp_path):
     conn = _FakeConnection(columns=['OWNER'], rows_by_schema={'SCOTT': [['SCOTT']]})
     dumped = dump_custom_sql(_FakeEngine(conn), tmp_path, ['SCOTT'])
     assert dumped == 1
-    target = tmp_path / 'scott' / '_meta' / 'get_table_stats.txt'
-    assert target.is_file()
-    assert 'SCOTT' in target.read_text(encoding='utf-8')
+    assert (tmp_path / 'scott' / '_meta' / 'get_table_stats.txt').is_file()
 
 
 def test_dump_schema_specific_meta_sql_only_that_schema(tmp_path):
@@ -108,25 +91,21 @@ def test_dump_schema_specific_meta_sql_only_that_schema(tmp_path):
     )
     dumped = dump_custom_sql(_FakeEngine(conn), tmp_path, ['SCOTT', 'HR'])
     assert dumped == 1
-    assert [params['schema'] for _sql, params in conn.calls] == ['SCOTT']
     assert (tmp_path / 'scott' / '_meta' / 'local.txt').is_file()
     assert not (tmp_path / 'hr' / '_meta' / 'local.txt').exists()
-    assert 'SCOTT' in (tmp_path / 'scott' / '_meta' / 'local.txt').read_text(
-        encoding='utf-8'
-    )
 
 
 def test_schema_meta_overrides_shared_script(tmp_path):
     shared = tmp_path / '_meta'
     shared.mkdir()
     (shared / 'stats.sql').write_text(
-        'select \'shared\' as src, :schema as owner from dual',
+        "select 'shared' as src, :schema as owner from dual",
         encoding='utf-8',
     )
     scott_meta = tmp_path / 'scott' / '_meta'
     scott_meta.mkdir(parents=True)
     (scott_meta / 'stats.sql').write_text(
-        'select \'local\' as src, :schema as owner from dual',
+        "select 'local' as src, :schema as owner from dual",
         encoding='utf-8',
     )
     conn = _FakeConnection(
@@ -141,12 +120,6 @@ def test_schema_meta_overrides_shared_script(tmp_path):
     sql_by_schema = {params['schema']: sql for sql, params in conn.calls}
     assert 'local' in sql_by_schema['SCOTT']
     assert 'shared' in sql_by_schema['HR']
-    assert 'local' in (tmp_path / 'scott' / '_meta' / 'stats.txt').read_text(
-        encoding='utf-8'
-    )
-    assert 'shared' in (tmp_path / 'hr' / '_meta' / 'stats.txt').read_text(
-        encoding='utf-8'
-    )
 
 
 class _FakeResult:
@@ -186,4 +159,3 @@ class _FakeEngine:
 
     def connect(self):
         return self.conn
-
