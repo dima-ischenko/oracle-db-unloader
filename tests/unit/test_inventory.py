@@ -35,6 +35,16 @@ def test_object_relpath_suffixes():
     assert object_relpath('SCOTT', 'MV1', 'MATERIALIZED VIEW') == 'scott/mviews/mv1.sql'
 
 
+def test_object_relpath_mixed_case_stays_lowercase():
+    assert (
+        object_relpath('SCOTT', 'CUSTOM_metrics', 'TABLE')
+        == 'scott/tables/custom_metrics.sql'
+    )
+    assert object_relpath('Hr', 'EmpHeap', 'VIEW') == 'hr/views/empheap.sql'
+    obj = _obj('CUSTOM_metrics', 'TABLE', datetime(2026, 11, 16, 8, 0, 0))
+    assert obj.relpath == 'scott/tables/custom_metrics.sql'
+
+
 def test_plan_write_when_missing_or_changed():
     stamp = datetime(2026, 11, 16, 8, 0, 0)
     emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 0, 0))

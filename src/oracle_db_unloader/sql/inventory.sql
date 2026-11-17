@@ -3,6 +3,55 @@ select owner,
        object_type,
        last_ddl_time
   from (
+        -- Tables / mviews: last_ddl_time is greatest(object, partitions, indexes)
+        select t.owner,
+               t.object_name,
+               t.object_type,
+               cast(max(d.last_ddl_time) as timestamp(9)) as last_ddl_time
+          from dba_objects t
+          join (
+                select o.owner,
+                       o.object_name as table_name,
+                       o.last_ddl_time
+                  from dba_objects o
+                 where o.owner = upper(:schema)
+                   and o.object_type in (
+                         'TABLE',
+                         'MATERIALIZED VIEW',
+                         'TABLE PARTITION',
+                         'TABLE SUBPARTITION'
+                       )
+                union all
+                select i.owner,
+                       i.table_name,
+                       o.last_ddl_time
+                  from dba_indexes i
+                  join dba_objects o
+                    on o.owner = i.owner
+                   and o.object_name = i.index_name
+                   and o.object_type in (
+                         'INDEX',
+                         'INDEX PARTITION',
+                         'INDEX SUBPARTITION'
+                       )
+                 where i.owner = upper(:schema)
+               ) d
+            on d.owner = t.owner
+           and d.table_name = t.object_name
+         where t.owner = upper(:schema)
+           and t.object_type in ('TABLE', 'MATERIALIZED VIEW')
+           and t.object_name not like 'RB$%'
+           and not (
+                 t.object_type = 'TABLE'
+                 and exists (
+                       select null
+                         from dba_mviews m
+                        where m.owner = t.owner
+                          and m.mview_name = t.object_name
+                     )
+               )
+         group by t.owner, t.object_name, t.object_type
+        union all
         select o.owner,
                o.object_name,
                o.object_type,
@@ -10,9 +59,7 @@ select owner,
           from dba_objects o
          where o.owner = upper(:schema)
            and o.object_type in (
-                 'TABLE',
                  'VIEW',
-                 'MATERIALIZED VIEW',
                  'PACKAGE',
                  'PACKAGE BODY',
                  'FUNCTION',
@@ -24,15 +71,6 @@ select owner,
                  'SYNONYM'
                )
            and o.object_name not like 'RB$%'
-           and not (
-                 o.object_type = 'TABLE'
-                 and exists (
-                       select null
-                         from dba_mviews m
-                        where m.owner = o.owner
-                          and m.mview_name = o.object_name
-                     )
-               )
         union all
         select s.owner,
                s.synonym_name as object_name,

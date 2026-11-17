@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from oracle_db_unloader import unload
-from oracle_db_unloader.inventory import normalize_ddl_time
+from oracle_db_unloader.inventory import fetch_inventory, max_last_ddl_time, normalize_ddl_time
 from oracle_db_unloader.state import get_last_unload_at, load_state
 
 
@@ -65,21 +65,29 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert 'create or replace package test.' not in pkg_sql
     assert 'create or replace package pkg_demo' in pkg_sql
 
-    sales_sql = sales.read_text(encoding='utf-8').lower()
-    assert '-- rows:' not in sales.read_text(encoding='utf-8')
-    assert '-- last_ddl:' not in sales.read_text(encoding='utf-8')
+    sales_raw = sales.read_text(encoding='utf-8')
+    sales_sql = sales_raw.lower()
+    assert '-- rows:' not in sales_raw
+    assert '-- last_ddl:' not in sales_raw
     assert 'partitioned: range' in sales_sql
     assert 'interval' in sales_sql
     assert 'list subpart' in sales_sql
     assert 'template 3 values' in sales_sql
     assert 'partition p2024' not in sales_sql
     assert 'p202401' not in sales_sql
-    assert 'values less than' not in sales_sql.split('/*')[0]
+    assert 'values less than' not in sales_sql
     assert 'subpartition template' in sales_sql
+    assert '/*' not in sales_raw
+    assert '*/' not in sales_raw
+    assert 'alter table sales_part modify' in sales_sql
+    assert sales_raw.rstrip().endswith(';')
+    assert table.read_text(encoding='utf-8').rstrip().endswith(';')
 
     camel_sql = camel.read_text(encoding='utf-8')
+    assert camel.name == 'custom_metrics.sql'
     assert '"CUSTOM_metrics"' in camel_sql
     assert 'comment on table "CUSTOM_metrics"' in camel_sql
+    assert camel_sql.rstrip().endswith(';')
 
     dml_text = dml.read_text(encoding='utf-8')
     assert dml_text.splitlines()[0].startswith('|')
@@ -92,18 +100,12 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     view_stamp = get_last_unload_at(state, 'TEST', 'VIEW')
     assert table_stamp is not None
     assert view_stamp is not None
-    with fresh_schema.connect() as conn:
-        db_max = conn.execute(
-            text(
-                """
-                select max(cast(last_ddl_time as timestamp(9)))
-                  from dba_objects
-                 where owner = 'TEST'
-                   and object_type = 'TABLE'
-                """
-            )
-        ).scalar()
-    assert normalize_ddl_time(table_stamp) == normalize_ddl_time(db_max)
+    tables = [
+        obj
+        for obj in fetch_inventory(fresh_schema, 'TEST')
+        if obj.object_type == 'TABLE'
+    ]
+    assert normalize_ddl_time(table_stamp) == max_last_ddl_time(tables)
 
 
 def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
@@ -163,3 +165,21 @@ def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
 
     _unload(fresh_schema, tmp_path, object_types=['VIEW'])
     assert not view.exists()
+
+
+def test_index_change_rewrites_table(fresh_schema, tmp_path):
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path, object_types=['TABLE'])
+    emp = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
+    before = emp.read_text(encoding='utf-8')
+    assert 'emp_heap_name_i' not in before.lower()
+
+    with fresh_schema.begin() as conn:
+        conn.execute(text('create index emp_heap_name_i on emp_heap (name)'))
+
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path, object_types=['TABLE'])
+    after = emp.read_text(encoding='utf-8')
+    assert after != before
+    assert 'emp_heap_name_i' in after.lower()
+    assert after.rstrip().endswith(';')

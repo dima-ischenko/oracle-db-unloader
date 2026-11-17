@@ -5,6 +5,7 @@ from pathlib import Path
 from oracle_db_unloader.resources import (
     SQL_DIR,
     bind_params,
+    ensure_semicolon,
     format_oracle_ident,
     split_statements,
     strip_owner_qualifiers,
@@ -34,6 +35,9 @@ def test_inventory_and_metadata_sql_use_binds():
     assert ':schema' in inventory
     assert '&' not in inventory
     assert split_statements(inventory) == [inventory.strip()]
+    assert 'TABLE PARTITION' in inventory
+    assert 'INDEX PARTITION' in inventory
+    assert 'dba_indexes' in inventory
 
     part = (SQL_DIR / 'partition_info.sql').read_text(encoding='utf-8')
     assert ':schema' in part and ':obj_name' in part
@@ -55,6 +59,13 @@ def test_sql_dir_is_packaged():
     assert (SQL_DIR / 'set_transform_params.sql').is_file()
     transform = (SQL_DIR / 'set_transform_params.sql').read_text(encoding='utf-8')
     assert 'EMIT_SCHEMA' in transform
+
+
+def test_ensure_semicolon():
+    assert ensure_semicolon('create table emp') == 'create table emp;\n'
+    assert ensure_semicolon('create table emp;\n') == 'create table emp;\n'
+    assert ensure_semicolon('end;\n/\n') == 'end;\n/\n'
+    assert ensure_semicolon('') == ''
 
 
 def test_format_oracle_ident():

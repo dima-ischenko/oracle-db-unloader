@@ -35,9 +35,22 @@ def test_compact_partition_comment():
     assert 'subpartition p0_p_src_1 values (1)' in block
     assert 'partition p202401' not in block
     assert 'values less than' not in block
+    assert '/*' not in block
+    assert '*/' not in block
+    assert block.rstrip().endswith(';')
 
     mixed = format_partition_template_block('CUSTOM_metrics', info)
     assert 'alter table "CUSTOM_metrics" modify' in mixed
+    assert mixed.rstrip().endswith(';')
+
+
+def test_partition_alter_without_template_ends_with_semicolon():
+    info = PartitionInfo(
+        partitioning_type='RANGE',
+        part_key='id',
+    )
+    block = format_partition_template_block('EMP', info)
+    assert block.strip() == 'alter table emp modify partition by range (id);'
 
 
 def test_file_header_is_partition_only():

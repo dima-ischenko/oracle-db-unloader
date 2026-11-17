@@ -16,7 +16,8 @@ begin
              'SEQ_DEMO',
              'SYN_EMP',
              'CURRENCY_DICT',
-             'CUSTOM_metrics'
+             'CUSTOM_metrics',
+             'EMP_HEAP_NAME_I'
            )
   ) loop
     begin

@@ -13,7 +13,8 @@ select 'create or replace synonym ' ||
             when regexp_like(s.table_name, '^[A-Z][A-Z0-9_$#]*$') then s.table_name
             else '"' || replace(s.table_name, '"', '""') || '"'
           end
-       || decode(s.db_link, null, null, '@') || s.db_link as ddl
+       || decode(s.db_link, null, null, '@') || s.db_link
+       || ';' as ddl
   from (
         select owner,
                synonym_name,
@@ -24,7 +25,3 @@ select 'create or replace synonym ' ||
        ) s
  where s.owner = upper(:schema)
    and s.synonym_name = :obj_name
-/
-
-select '/' as ddl
-  from dual

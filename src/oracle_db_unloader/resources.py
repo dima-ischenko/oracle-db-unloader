@@ -48,6 +48,16 @@ def as_text(value: Any) -> str:
     return str(value)
 
 
+def ensure_semicolon(ddl: str) -> str:
+    """Ensure a SQL statement ends with ';' (PL/SQL '/' is left as-is)."""
+    stripped = as_text(ddl).rstrip()
+    if not stripped:
+        return ''
+    if stripped.endswith(';') or stripped.endswith('/'):
+        return stripped + '\n'
+    return stripped + ';\n'
+
+
 def format_oracle_ident(name: str) -> str:
     """Quote mixed-case and other non-simple Oracle identifiers."""
     if _SIMPLE_IDENT_RE.fullmatch(name or ''):

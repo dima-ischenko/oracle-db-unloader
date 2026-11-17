@@ -36,7 +36,9 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
 `package`, `mview`, `function`, `procedure`, `trigger`, `type`, `sequence`,
 `synonym`). `package` and `type` include spec and body. Incremental watermarks
 are stored per schema and object type as the max ``last_ddl_time`` actually
-seen in Oracle. The next run writes objects whose ``last_ddl_time`` is strictly
+seen in Oracle. For tables and materialized views that value is
+``greatest`` of the object, its partitions/subpartitions, and its indexes.
+The next run writes objects whose ``last_ddl_time`` is strictly
 greater than that watermark. `--full` ignores watermarks and rewrites every
 selected object. `--lookback-minutes` (default 0) can widen the cutoff.
 Any exception stops the whole run: remaining types and schemas are not
@@ -45,9 +47,10 @@ DEBUG|INFO|WARNING|ERROR` (default `INFO`) configures the CLI logger. Importing
 the library does not attach handlers; the host process owns logging.
 
 Quoted mixed-case names such as `"CUSTOM_metrics"` are passed to
-`dbms_metadata.get_ddl` as stored in the dictionary (not uppercased). Simple
-uppercase identifiers stay unquoted and lowercased in generated comments and
-sequences.
+`dbms_metadata.get_ddl` as stored in the dictionary (not uppercased). File
+names stay lowercase (`custom_metrics.sql`). Simple uppercase identifiers stay
+unquoted and lowercased in generated comments and sequences. SQL statements
+end with `;`; PL/SQL source still uses `/`.
 
 Custom SELECTs live in underscore-prefixed folders at the output root (or in
 `--custom-sql-dir`), for example `_meta/get_table_stats.sql`. Bind `:schema`
@@ -94,9 +97,10 @@ output_dir/
 ```
 
 The tree is reused across runs (no timestamp folder) so git and incremental
-unloads work. Table and materialized-view files get a compact partition
-template (no per-partition lists). Custom `_*/` SELECT scripts are always
-re-run with `:schema` and written as GitHub-flavored tables under each schema.
+unloads work. Table and materialized-view files get an `alter table ... modify
+partition by ...` statement (template only, no per-partition lists). Custom
+`_*/` SELECT scripts are always re-run with `:schema` and written as
+GitHub-flavored tables under each schema.
 
 ## Tests
 

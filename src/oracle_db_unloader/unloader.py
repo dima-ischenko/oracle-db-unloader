@@ -30,8 +30,10 @@ from .metadata import (
     format_partition_template_block,
 )
 from .resources import (
+    as_text,
     bind_params,
     concat_ddl,
+    ensure_semicolon,
     load_sql,
     split_statements,
     strip_owner_qualifiers,
@@ -70,7 +72,10 @@ def fetch_object_ddl(conn: Connection, obj: DbObject) -> str:
         if not result.returns_rows:
             continue
         for row in result:
-            parts.append(row[0])
+            part = as_text(row[0])
+            if obj.object_type not in SOURCE_TYPES:
+                part = ensure_semicolon(part)
+            parts.append(part)
     ddl = strip_owner_qualifiers(concat_ddl(parts), obj.owner)
     if obj.object_type in SOURCE_TYPES:
         stripped = ddl.rstrip()
