@@ -38,8 +38,8 @@ db-unloader --db-login system --db-pass pass --db-tns orclpdb \
 are stored per schema and object type as the max ``last_ddl_time`` actually
 seen in Oracle. For tables and materialized views that value is
 ``greatest`` of the object, its partitions/subpartitions, and its indexes.
-The next run writes objects whose ``last_ddl_time`` is strictly
-greater than that watermark. `--full` ignores watermarks and rewrites every
+The next run writes objects whose ``last_ddl_time`` is greater than or
+equal to that watermark. `--full` ignores watermarks and rewrites every
 selected object. `--lookback-minutes` (default 0) can widen the cutoff.
 Any exception stops the whole run: remaining types and schemas are not
 started, and the failed type's watermark is not moved. `--log-level

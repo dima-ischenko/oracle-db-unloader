@@ -24,10 +24,11 @@ def test_watermark_roundtrip_per_type(tmp_path):
     state = set_last_unload_at(state, 'scott', later, 'VIEW')
     save_state(tmp_path, state)
     loaded = load_state(tmp_path)
-    assert get_last_unload_at(loaded, 'SCOTT', 'TABLE') == when
-    assert get_last_unload_at(loaded, 'SCOTT', 'VIEW') == later
+    assert get_last_unload_at(loaded, 'SCOTT', 'TABLE') == datetime(2026, 11, 16, 8, 0, 0)
+    assert get_last_unload_at(loaded, 'SCOTT', 'VIEW') == datetime(2026, 11, 16, 9, 0, 0)
     payload = state_path(tmp_path).read_text(encoding='utf-8')
-    assert '2026-11-16T08:00:00.123456' in payload
+    assert '2026-11-16T08:00:00' in payload
+    assert '.123456' not in payload
     assert 'last_ddl_time' in payload
 
 
@@ -45,7 +46,7 @@ def test_aware_timestamp_is_stored_naive():
     when = datetime(2026, 11, 16, 8, 0, 0, 1, tzinfo=timezone.utc)
     state = set_last_unload_at({'schemas': {}}, 'HR', when, 'TABLE')
     loaded = get_last_unload_at(state, 'HR', 'TABLE')
-    assert loaded == datetime(2026, 11, 16, 8, 0, 0, 1)
+    assert loaded == datetime(2026, 11, 16, 8, 0, 0)
     assert loaded.tzinfo is None
 
 

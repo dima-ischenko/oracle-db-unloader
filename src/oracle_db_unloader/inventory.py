@@ -140,7 +140,7 @@ def object_relpath(schema: str, name: str, object_type: str) -> str:
 
 
 def normalize_ddl_time(value: Optional[datetime]) -> Optional[datetime]:
-    """Keep Oracle last_ddl_time as a naive timestamp with full precision.
+    """Keep Oracle last_ddl_time as a naive timestamp truncated to seconds.
 
     Do not assume UTC: the watermark must live in the same clock as
     ``dba_objects.last_ddl_time``.
@@ -148,8 +148,8 @@ def normalize_ddl_time(value: Optional[datetime]) -> Optional[datetime]:
     if value is None:
         return None
     if value.tzinfo is not None:
-        return value.replace(tzinfo=None)
-    return value
+        value = value.replace(tzinfo=None)
+    return value.replace(microsecond=0)
 
 
 def max_last_ddl_time(objects: Iterable[DbObject]) -> Optional[datetime]:
@@ -198,7 +198,7 @@ def plan_actions(
             to_write.append(obj)
             continue
         ddl_time = normalize_ddl_time(obj.last_ddl_time)
-        if ddl_time is None or ddl_time > cutoff:
+        if ddl_time is None or ddl_time >= cutoff:
             to_write.append(obj)
 
     to_delete = {path for path in disk_relpaths if path not in known_paths}

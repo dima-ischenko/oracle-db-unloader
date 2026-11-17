@@ -39,7 +39,7 @@ def _serialize_timestamp(value: datetime) -> str:
     naive = normalize_ddl_time(value)
     if naive is None:
         raise ValueError('timestamp is required')
-    return naive.isoformat(timespec='microseconds')
+    return naive.isoformat(timespec='seconds')
 
 
 def get_last_unload_at(

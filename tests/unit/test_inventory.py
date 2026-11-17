@@ -69,16 +69,16 @@ def test_plan_write_when_missing_or_changed():
     assert to_delete == {'scott/views/gone.sql'}
 
 
-def test_plan_equal_last_ddl_is_not_rewritten():
+def test_plan_equal_last_ddl_is_rewritten():
     stamp = datetime(2026, 11, 16, 8, 0, 0, 123456)
-    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 8, 0, 0, 123456))
+    emp = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 8, 0, 0, 654321))
     to_write, _to_delete = plan_actions(
         [emp],
         {emp.relpath},
         last_unload_at=stamp,
         lookback_minutes=0,
     )
-    assert to_write == []
+    assert to_write == [emp]
 
 
 def test_plan_full_when_no_watermark():
@@ -103,10 +103,10 @@ def test_plan_lookback_includes_recent_objects():
 def test_max_last_ddl_time_and_next_watermark():
     older = _obj('EMP', 'TABLE', datetime(2026, 11, 16, 7, 0, 0, 1))
     newer = _obj('DEPT', 'TABLE', datetime(2026, 11, 16, 8, 0, 0, 2))
-    assert max_last_ddl_time([older, newer]) == newer.last_ddl_time
+    assert max_last_ddl_time([older, newer]) == datetime(2026, 11, 16, 8, 0, 0)
     previous = datetime(2026, 11, 16, 7, 30, 0)
-    assert next_watermark(previous, [older, newer]) == newer.last_ddl_time
-    assert next_watermark(newer.last_ddl_time, [older]) == newer.last_ddl_time
+    assert next_watermark(previous, [older, newer]) == datetime(2026, 11, 16, 8, 0, 0)
+    assert next_watermark(newer.last_ddl_time, [older]) == datetime(2026, 11, 16, 8, 0, 0)
 
 
 def test_normalize_object_types_aliases_and_expand():
