@@ -53,10 +53,10 @@ def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path
         )
 
     assert written == [('SCOTT', 'TABLE', 'EMP'), ('SCOTT', 'VIEW', 'V_EMP')]
-    state = load_state(tmp_path)
-    assert get_last_unload_at(state, 'SCOTT', 'TABLE') is not None
-    assert get_last_unload_at(state, 'SCOTT', 'VIEW') is None
-    assert get_last_unload_at(state, 'HR', 'TABLE') is None
+    scott = load_state(tmp_path, 'SCOTT')
+    assert get_last_unload_at(scott, 'TABLE') is not None
+    assert get_last_unload_at(scott, 'VIEW') is None
+    assert get_last_unload_at(load_state(tmp_path, 'HR'), 'TABLE') is None
 
 
 def test_same_type_failure_does_not_write_remaining(monkeypatch, tmp_path):

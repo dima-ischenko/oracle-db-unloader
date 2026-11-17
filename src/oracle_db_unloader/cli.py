@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--output-dir',
         required=True,
         dest='output_dir',
-        help='Directory for SQL files and .unloader_state.json',
+        help='Directory for SQL files and per-schema .unloader_state.json',
     )
     parser.add_argument(
         '--max-connections',

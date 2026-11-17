@@ -36,6 +36,7 @@ from .resources import (
     load_sql,
     split_statements,
     strip_owner_qualifiers,
+    unquote_simple_idents,
 )
 from .state import get_last_unload_at, load_state, save_state, set_last_unload_at
 
@@ -80,7 +81,7 @@ def fetch_object_ddl(conn: Connection, obj: DbObject) -> str:
             if obj.object_type not in SOURCE_TYPES:
                 part = ensure_semicolon(part)
             parts.append(part)
-    ddl = strip_owner_qualifiers(concat_ddl(parts), obj.owner)
+    ddl = unquote_simple_idents(strip_owner_qualifiers(concat_ddl(parts), obj.owner))
     if obj.object_type in SOURCE_TYPES:
         stripped = ddl.rstrip()
         if not stripped.endswith('/'):
@@ -261,12 +262,11 @@ def unload_schema(
     output_dir: Path,
     *,
     object_types: Sequence[str],
-    state: Dict[str, Any],
     lookback_minutes: int,
     max_connections: int,
     full: bool,
     stats: RunStats,
-) -> Dict[str, Any]:
+) -> None:
     inventory = fetch_inventory(engine, schema)
     by_type: Dict[str, List[DbObject]] = {
         object_type: [] for object_type in object_types
@@ -275,6 +275,7 @@ def unload_schema(
         if obj.object_type in by_type:
             by_type[obj.object_type].append(obj)
 
+    state = load_state(output_dir, schema)
     for object_type in object_types:
         _unload_object_type(
             engine,
@@ -282,26 +283,25 @@ def unload_schema(
             object_type,
             by_type[object_type],
             output_dir,
-            last_unload_at=get_last_unload_at(state, schema, object_type),
+            last_unload_at=get_last_unload_at(state, object_type),
             lookback_minutes=lookback_minutes,
             max_connections=max_connections,
             full=full,
             stats=stats,
         )
         watermark = next_watermark(
-            get_last_unload_at(state, schema, object_type),
+            get_last_unload_at(state, object_type),
             by_type[object_type],
         )
         if watermark is not None:
-            state = set_last_unload_at(state, schema, watermark, object_type)
-            save_state(output_dir, state)
+            state = set_last_unload_at(state, watermark, object_type)
+            save_state(output_dir, schema, state)
         logger.info(
             'schema %s type %s: done watermark=%s',
             schema,
             object_type,
             watermark.isoformat() if watermark else 'none',
         )
-    return state
 
 
 def unload(
@@ -341,17 +341,15 @@ def unload(
         lookback_minutes,
         sql_dir or 'none',
     )
-    state = load_state(target)
     stats = RunStats()
     try:
         for schema in schema_list:
             logger.info('unloading schema %s to %s', schema, target)
-            state = unload_schema(
+            unload_schema(
                 engine,
                 schema,
                 target,
                 object_types=type_list,
-                state=state,
                 lookback_minutes=lookback_minutes,
                 max_connections=max_connections,
                 full=full,

@@ -42,7 +42,7 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
 
     table = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
     sales = Path(tmp_path) / 'test' / 'tables' / 'sales_part.sql'
-    camel = Path(tmp_path) / 'test' / 'tables' / 'custom_metrics.sql'
+    camel = Path(tmp_path) / 'test' / 'tables' / 'mixedcase_metrics.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
     dml = Path(tmp_path) / 'test' / '_meta' / 'currency.txt'
@@ -50,22 +50,27 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     for path in (table, sales, camel, view, pkg_s, dml):
         assert path.is_file(), path
 
-    table_sql = table.read_text(encoding='utf-8').lower()
-    assert 'create table test.' not in table_sql
-    assert 'create table emp_heap' in table_sql or 'create table "emp_heap"' in table_sql
+    table_sql = table.read_text(encoding='utf-8')
+    assert 'create table test.' not in table_sql.lower()
+    assert 'create table emp_heap' in table_sql.lower()
+    assert '"EMP_HEAP"' not in table_sql
+    assert '"ID"' not in table_sql
 
     sales_sql = sales.read_text(encoding='utf-8').lower()
     assert 'alter table sales_part modify' in sales_sql
     assert 'partition p2024' not in sales_sql
 
     camel_sql = camel.read_text(encoding='utf-8')
-    assert '"CUSTOM_metrics"' in camel_sql
+    assert '"MixedCase_metrics"' in camel_sql
+    assert '"createdAt"' in camel_sql
+    assert '"ID"' not in camel_sql
+    assert 'comment on column "MixedCase_metrics"."createdAt"' in camel_sql
 
     dml_text = dml.read_text(encoding='utf-8')
     assert 'USD' in dml_text
     assert 'null' in dml_text
 
-    table_stamp = get_last_unload_at(load_state(tmp_path), 'TEST', 'TABLE')
+    table_stamp = get_last_unload_at(load_state(tmp_path, 'TEST'), 'TABLE')
     tables = [
         obj for obj in fetch_inventory(fresh_schema, 'TEST') if obj.object_type == 'TABLE'
     ]

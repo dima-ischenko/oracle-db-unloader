@@ -30,8 +30,8 @@ def test_object_relpath_suffixes():
     assert object_relpath('SCOTT', 'EMP', 'TABLE') == 'scott/tables/emp.sql'
     assert object_relpath('SCOTT', 'PKG_X', 'PACKAGE') == 'scott/packages/pkg_x_s.sql'
     assert object_relpath('SCOTT', 'PKG_X', 'PACKAGE BODY') == 'scott/packages/pkg_x_b.sql'
-    assert object_relpath('SCOTT', 'CUSTOM_metrics', 'TABLE') == (
-        'scott/tables/custom_metrics.sql'
+    assert object_relpath('SCOTT', 'MixedCase_metrics', 'TABLE') == (
+        'scott/tables/mixedcase_metrics.sql'
     )
 
 

@@ -7,7 +7,13 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from .inventory import DbObject
-from .resources import bind_params, ensure_semicolon, format_oracle_ident, load_sql
+from .resources import (
+    bind_params,
+    ensure_semicolon,
+    format_oracle_ident,
+    format_oracle_ident_list,
+    load_sql,
+)
 
 
 @dataclass(frozen=True)
@@ -66,7 +72,7 @@ def format_partition_template_block(
             for i, item in enumerate(info.template):
                 comma = ',' if i < last else ''
                 lines.append(
-                    f'    subpartition {item.name.lower()} values ({item.high_bound}){comma}'
+                    f'    subpartition {format_oracle_ident(item.name)} values ({item.high_bound}){comma}'
                 )
             lines.append('  )')
     return ensure_semicolon('\n'.join(lines)).rstrip() + '\n'
@@ -102,9 +108,9 @@ def fetch_partition_info(conn: Connection, obj: DbObject) -> Optional[PartitionI
     partitioning_type, subpartitioning_type, interval, part_key, subpart_key = row
     return PartitionInfo(
         partitioning_type=partitioning_type,
-        part_key=part_key or '',
+        part_key=format_oracle_ident_list(part_key),
         interval=interval,
         subpartitioning_type=subpartitioning_type,
-        subpart_key=subpart_key,
+        subpart_key=format_oracle_ident_list(subpart_key) or None,
         template=tuple(templates),
     )

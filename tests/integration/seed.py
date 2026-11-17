@@ -16,7 +16,7 @@ begin
              'SEQ_DEMO',
              'SYN_EMP',
              'CURRENCY_DICT',
-             'CUSTOM_metrics',
+             'MixedCase_metrics',
              'EMP_HEAP_NAME_I'
            )
   ) loop
@@ -85,12 +85,13 @@ CREATE_STATEMENTS = [
     'create sequence seq_demo',
     'create or replace synonym syn_emp for emp_heap',
     """
-    create table "CUSTOM_metrics" (
+    create table "MixedCase_metrics" (
       id number,
       "createdAt" varchar2(32)
     )
     """,
-    'comment on table "CUSTOM_metrics" is \'camel case metrics\'',
+    'comment on table "MixedCase_metrics" is \'camel case metrics\'',
+    'comment on column "MixedCase_metrics"."createdAt" is \'camel case column\'',
     """
     create table currency_dict (
       code varchar2(3),

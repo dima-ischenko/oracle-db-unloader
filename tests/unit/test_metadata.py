@@ -25,8 +25,8 @@ def test_compact_partition_alter():
     assert 'subpartition template' in block
     assert 'partition p202401' not in block
     assert block.rstrip().endswith(';')
-    mixed = format_partition_template_block('CUSTOM_metrics', info)
-    assert 'alter table "CUSTOM_metrics" modify' in mixed
+    mixed = format_partition_template_block('MixedCase_metrics', info)
+    assert 'alter table "MixedCase_metrics" modify' in mixed
 
 
 def test_partition_alter_without_template():

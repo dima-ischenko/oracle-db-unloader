@@ -1,18 +1,11 @@
 select 'create or replace synonym ' ||
-       case
-         when regexp_like(s.synonym_name, '^[A-Z][A-Z0-9_$#]*$') then s.synonym_name
-         else '"' || replace(s.synonym_name, '"', '""') || '"'
-       end
+       '"' || replace(s.synonym_name, '"', '""') || '"'
        || ' for '
        || case
             when s.table_owner is null then null
-            when regexp_like(s.table_owner, '^[A-Z][A-Z0-9_$#]*$') then s.table_owner || '.'
             else '"' || replace(s.table_owner, '"', '""') || '".'
           end
-       || case
-            when regexp_like(s.table_name, '^[A-Z][A-Z0-9_$#]*$') then s.table_name
-            else '"' || replace(s.table_name, '"', '""') || '"'
-          end
+       || '"' || replace(s.table_name, '"', '""') || '"'
        || decode(s.db_link, null, null, '@') || s.db_link
        || ';' as ddl
   from (

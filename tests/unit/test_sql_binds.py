@@ -5,8 +5,10 @@ from oracle_db_unloader.resources import (
     bind_params,
     ensure_semicolon,
     format_oracle_ident,
+    format_oracle_ident_list,
     split_statements,
     strip_owner_qualifiers,
+    unquote_simple_idents,
 )
 
 SQLPLUS_MARKERS = ('define ', 'spool ', '&1', '&v_', 'prompt ')
@@ -49,9 +51,28 @@ def test_ensure_semicolon():
 
 def test_format_oracle_ident():
     assert format_oracle_ident('EMP_HEAP') == 'emp_heap'
-    assert format_oracle_ident('CUSTOM_metrics') == '"CUSTOM_metrics"'
+    assert format_oracle_ident('MixedCase_metrics') == '"MixedCase_metrics"'
+    assert format_oracle_ident_list('SALE_DATE,SOURCE_ID') == 'sale_date, source_id'
+    assert format_oracle_ident_list('createdAt') == '"createdAt"'
+
+
+def test_unquote_simple_idents():
+    ddl = 'CREATE TABLE "EMP_HEAP" (\n  "ID" NUMBER,\n  "NAME" VARCHAR2(32)\n)\n'
+    assert unquote_simple_idents(ddl) == (
+        'CREATE TABLE emp_heap (\n  id NUMBER,\n  name VARCHAR2(32)\n)\n'
+    )
+    mixed = 'CREATE TABLE "MixedCase_metrics" (\n  "ID" NUMBER,\n  "createdAt" VARCHAR2(32)\n)\n'
+    assert unquote_simple_idents(mixed) == (
+        'CREATE TABLE "MixedCase_metrics" (\n  id NUMBER,\n  "createdAt" VARCHAR2(32)\n)\n'
+    )
+    comment = "comment on table \"EMP_HEAP\" is 'see \"FOO\" and \"MixedCase_metrics\"';"
+    assert unquote_simple_idents(comment) == (
+        "comment on table emp_heap is 'see \"FOO\" and \"MixedCase_metrics\"';"
+    )
 
 
 def test_strip_owner_qualifiers():
     ddl = 'create table "SCOTT"."EMP" (\n  id number\n)\n'
-    assert strip_owner_qualifiers(ddl, 'SCOTT') == 'create table "EMP" (\n  id number\n)\n'
+    stripped = strip_owner_qualifiers(ddl, 'SCOTT')
+    assert stripped == 'create table "EMP" (\n  id number\n)\n'
+    assert unquote_simple_idents(stripped) == 'create table emp (\n  id number\n)\n'

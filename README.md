@@ -46,11 +46,11 @@ started, and the failed type's watermark is not moved. `--log-level
 DEBUG|INFO|WARNING|ERROR` (default `INFO`) configures the CLI logger. Importing
 the library does not attach handlers; the host process owns logging.
 
-Quoted mixed-case names such as `"CUSTOM_metrics"` are passed to
+Quoted mixed-case names such as `"MixedCase_metrics"` are passed to
 `dbms_metadata.get_ddl` as stored in the dictionary (not uppercased). File
-names stay lowercase (`custom_metrics.sql`). Simple uppercase identifiers stay
-unquoted and lowercased in generated comments and sequences. SQL statements
-end with `;`; PL/SQL source still uses `/`.
+names stay lowercase (`mixedcase_metrics.sql`). Simple uppercase identifiers
+are unquoted and lowercased; mixed-case and other names that need quoting
+stay quoted. SQL statements end with `;`; PL/SQL source still uses `/`.
 
 Custom SELECTs live in underscore-prefixed folders at the output root (or in
 `--custom-sql-dir`), for example `_meta/get_table_stats.sql`. Bind `:schema`
@@ -87,20 +87,23 @@ finally:
 
 ```
 output_dir/
-  .unloader_state.json
   _meta/get_table_stats.sql
+  scott/.unloader_state.json
   scott/functions/*.sql
   scott/packages/*_s.sql *_b.sql
   scott/tables/*.sql
   scott/_meta/get_table_stats.txt
   scott/_meta/local.sql
   scott/_meta/local.txt
+  hr/.unloader_state.json
   hr/_meta/get_table_stats.txt
   ...
 ```
 
 The tree is reused across runs (no timestamp folder) so git and incremental
-unloads work. Table and materialized-view files get an `alter table ... modify
+unloads work. Incremental watermarks live in each schema folder as
+`.unloader_state.json`. A leftover root `.unloader_state.json` is split on
+the next save. Table and materialized-view files get an `alter table ... modify
 partition by ...` statement (template only, no per-partition lists). Custom
 `_*/` SELECT scripts are always re-run with `:schema`. Shared scripts write
 under every schema; `<schema>/_meta/*.sql` writes only to that schema.

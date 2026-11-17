@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 SQL_DIR = Path(__file__).resolve().parent / 'sql'
 _BIND_RE = re.compile(r'(?<!:):([A-Za-z_][A-Za-z0-9_]*)')
 _SIMPLE_IDENT_RE = re.compile(r'^[A-Z][A-Z0-9_$#]*$')
+_STRING_OR_QUOTED_IDENT_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
 
 
 def load_sql(name: str) -> str:
@@ -63,6 +64,31 @@ def format_oracle_ident(name: str) -> str:
     if _SIMPLE_IDENT_RE.fullmatch(name or ''):
         return name.lower()
     return '"' + (name or '').replace('"', '""') + '"'
+
+
+def format_oracle_ident_list(names: Optional[str], sep: str = ', ') -> str:
+    if not names:
+        return ''
+    return sep.join(
+        format_oracle_ident(part.strip())
+        for part in names.split(',')
+        if part.strip()
+    )
+
+
+def unquote_simple_idents(sql: str) -> str:
+    """Unquote simple uppercase identifiers; keep mixed-case and strings."""
+
+    def replacer(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token.startswith("'"):
+            return token
+        ident = token[1:-1].replace('""', '"')
+        if _SIMPLE_IDENT_RE.fullmatch(ident):
+            return ident.lower()
+        return token
+
+    return _STRING_OR_QUOTED_IDENT_RE.sub(replacer, sql)
 
 
 def strip_owner_qualifiers(ddl: str, owner: str) -> str:

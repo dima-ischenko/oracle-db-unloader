@@ -3,10 +3,7 @@ select dbms_metadata.get_ddl('VIEW', :obj_name, upper(:schema)) as ddl
 /
 
 select 'comment on table ' ||
-       case
-         when regexp_like(dtc.table_name, '^[A-Z][A-Z0-9_$#]*$') then lower(dtc.table_name)
-         else '"' || replace(dtc.table_name, '"', '""') || '"'
-       end
+       '"' || replace(dtc.table_name, '"', '""') || '"'
        || ' is '
        || '''' || replace(dtc.comments, '''', '''''') || '''' || ';' as ddl
   from dba_tab_comments dtc
@@ -16,15 +13,9 @@ select 'comment on table ' ||
 /
 
 select 'comment on column ' ||
-       case
-         when regexp_like(dcc.table_name, '^[A-Z][A-Z0-9_$#]*$') then lower(dcc.table_name)
-         else '"' || replace(dcc.table_name, '"', '""') || '"'
-       end
+       '"' || replace(dcc.table_name, '"', '""') || '"'
        || '.' ||
-       case
-         when regexp_like(dcc.column_name, '^[A-Z][A-Z0-9_$#]*$') then lower(dcc.column_name)
-         else '"' || replace(dcc.column_name, '"', '""') || '"'
-       end
+       '"' || replace(dcc.column_name, '"', '""') || '"'
        || ' is '
        || '''' || replace(dcc.comments, '''', '''''') || '''' || ';' as ddl
   from dba_col_comments dcc
