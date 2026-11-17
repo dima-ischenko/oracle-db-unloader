@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from oracle_db_unloader.inventory import DbObject
-from oracle_db_unloader.state import get_last_unload_at, load_state
+from oracle_db_unloader.state import get_last_unload_at, load_state, state_path
 from oracle_db_unloader.unloader import UnloadError, unload
 
 
@@ -114,3 +114,41 @@ def test_progress_and_summary_logging(monkeypatch, tmp_path, caplog):
 
     assert 'unload complete added=1 updated=0 deleted=1' in caplog.text
     assert not gone.exists()
+
+
+def test_empty_schema_writes_nothing(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.fetch_inventory',
+        lambda _engine, _schema: [],
+    )
+    caplog.set_level(logging.INFO, logger='oracle_db_unloader')
+    unload(
+        MagicMock(),
+        ['EMPTY'],
+        tmp_path,
+        object_types=['table'],
+        max_connections=1,
+    )
+    assert not (tmp_path / 'empty').exists()
+    assert not state_path(tmp_path, 'EMPTY').exists()
+    assert 'inventory=0 write=0 delete=0' in caplog.text
+    assert 'unload complete added=0 updated=0 deleted=0' in caplog.text
+
+
+def test_empty_schema_deletes_stale_files(monkeypatch, tmp_path):
+    stale = tmp_path / 'empty' / 'tables' / 'gone.sql'
+    stale.parent.mkdir(parents=True)
+    stale.write_text('-- gone\n', encoding='utf-8')
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.fetch_inventory',
+        lambda _engine, _schema: [],
+    )
+    unload(
+        MagicMock(),
+        ['EMPTY'],
+        tmp_path,
+        object_types=['table'],
+        max_connections=1,
+    )
+    assert not stale.exists()
+    assert get_last_unload_at(load_state(tmp_path, 'EMPTY'), 'TABLE') is None
