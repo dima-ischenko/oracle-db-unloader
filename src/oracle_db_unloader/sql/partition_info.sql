@@ -17,4 +17,4 @@ select pt.partitioning_type,
        ) as subpart_key
   from dba_part_tables pt
  where pt.owner = upper(:schema)
-   and pt.table_name = upper(:obj_name)
+   and pt.table_name = :obj_name

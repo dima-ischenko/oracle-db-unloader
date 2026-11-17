@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List
 
 SQL_DIR = Path(__file__).resolve().parent / 'sql'
 _BIND_RE = re.compile(r'(?<!:):([A-Za-z_][A-Za-z0-9_]*)')
+_SIMPLE_IDENT_RE = re.compile(r'^[A-Z][A-Z0-9_$#]*$')
 
 
 def load_sql(name: str) -> str:
@@ -45,6 +46,13 @@ def as_text(value: Any) -> str:
         data = read()
         return as_text(data)
     return str(value)
+
+
+def format_oracle_ident(name: str) -> str:
+    """Quote mixed-case and other non-simple Oracle identifiers."""
+    if _SIMPLE_IDENT_RE.fullmatch(name or ''):
+        return name.lower()
+    return '"' + (name or '').replace('"', '""') + '"'
 
 
 def strip_owner_qualifiers(ddl: str, owner: str) -> str:

@@ -7,5 +7,5 @@ select decode(
   from dba_source d
  where d.type = :obj_type
    and d.owner = upper(:schema)
-   and upper(d.name) = upper(:obj_name)
+   and d.name = :obj_name
  order by d.line

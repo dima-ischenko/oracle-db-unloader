@@ -5,6 +5,7 @@ from pathlib import Path
 from oracle_db_unloader.resources import (
     SQL_DIR,
     bind_params,
+    format_oracle_ident,
     split_statements,
     strip_owner_qualifiers,
 )
@@ -23,6 +24,9 @@ def test_unload_scripts_use_bind_variables():
         binds = bind_params(sql, {'schema': 'SCOTT', 'obj_name': 'EMP', 'obj_type': 'TABLE'})
         assert 'schema' in binds, f'{path.name} must bind :schema'
         assert 'obj_name' in binds, f'{path.name} must bind :obj_name'
+        assert 'upper(:obj_name)' not in sql, (
+            f'{path.name} must pass object names as stored, not upper(:obj_name)'
+        )
 
 
 def test_inventory_and_metadata_sql_use_binds():
@@ -33,6 +37,9 @@ def test_inventory_and_metadata_sql_use_binds():
 
     part = (SQL_DIR / 'partition_info.sql').read_text(encoding='utf-8')
     assert ':schema' in part and ':obj_name' in part
+    assert 'upper(:obj_name)' not in part
+    template = (SQL_DIR / 'partition_template.sql').read_text(encoding='utf-8')
+    assert 'upper(:obj_name)' not in template
 
 
 def test_split_statements_on_slash():
@@ -48,6 +55,12 @@ def test_sql_dir_is_packaged():
     assert (SQL_DIR / 'set_transform_params.sql').is_file()
     transform = (SQL_DIR / 'set_transform_params.sql').read_text(encoding='utf-8')
     assert 'EMIT_SCHEMA' in transform
+
+
+def test_format_oracle_ident():
+    assert format_oracle_ident('EMP_HEAP') == 'emp_heap'
+    assert format_oracle_ident('CUSTOM_metrics') == '"CUSTOM_metrics"'
+    assert format_oracle_ident('weird"name') == '"weird""name"'
 
 
 def test_strip_owner_qualifiers():

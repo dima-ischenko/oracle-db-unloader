@@ -42,7 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         '--custom-sql-dir',
         dest='custom_sql_dir',
         default=None,
-        help='Directory of SELECT scripts dumped as text tables under dml/',
+        help=(
+            'Directory of underscore-prefixed folders with SELECT scripts '
+            '(e.g. _meta/get_table_stats.sql). If omitted, scripts are read '
+            'from output-dir. Bind :schema to run the same query for every '
+            'schema; results go to <schema>/_meta/<script>.txt'
+        ),
     )
     parser.add_argument(
         '--full',

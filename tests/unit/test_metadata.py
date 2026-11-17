@@ -36,6 +36,9 @@ def test_compact_partition_comment():
     assert 'partition p202401' not in block
     assert 'values less than' not in block
 
+    mixed = format_partition_template_block('CUSTOM_metrics', info)
+    assert 'alter table "CUSTOM_metrics" modify' in mixed
+
 
 def test_file_header_is_partition_only():
     info = PartitionInfo(

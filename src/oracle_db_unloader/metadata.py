@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from .inventory import DbObject
-from .resources import bind_params, load_sql
+from .resources import bind_params, format_oracle_ident, load_sql
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ def format_partition_template_block(
         part_by += f' interval({info.interval.lower()})'
     lines = [
         '/*',
-        f'alter table {table_name.lower()} modify {part_by}',
+        f'alter table {format_oracle_ident(table_name)} modify {part_by}',
     ]
     sub_type = info.subpartitioning_type
     if sub_type and sub_type.upper() != 'NONE' and info.subpart_key:

@@ -39,9 +39,20 @@ are stored per schema and object type as the max ``last_ddl_time`` actually
 seen in Oracle. The next run writes objects whose ``last_ddl_time`` is strictly
 greater than that watermark. `--full` ignores watermarks and rewrites every
 selected object. `--lookback-minutes` (default 0) can widen the cutoff.
-`--log-level
+Any exception stops the whole run: remaining types and schemas are not
+started, and the failed type's watermark is not moved. `--log-level
 DEBUG|INFO|WARNING|ERROR` (default `INFO`) configures the CLI logger. Importing
 the library does not attach handlers; the host process owns logging.
+
+Quoted mixed-case names such as `"CUSTOM_metrics"` are passed to
+`dbms_metadata.get_ddl` as stored in the dictionary (not uppercased). Simple
+uppercase identifiers stay unquoted and lowercased in generated comments and
+sequences.
+
+Custom SELECTs live in underscore-prefixed folders at the output root (or in
+`--custom-sql-dir`), for example `_meta/get_table_stats.sql`. Bind `:schema`
+to run the same query for every schema. Results are written per schema as
+`<schema>/_meta/get_table_stats.txt`.
 
 ## Library
 
@@ -73,17 +84,19 @@ finally:
 ```
 output_dir/
   .unloader_state.json
+  _meta/get_table_stats.sql
   scott/functions/*.sql
   scott/packages/*_s.sql *_b.sql
   scott/tables/*.sql
+  scott/_meta/get_table_stats.txt
+  hr/_meta/get_table_stats.txt
   ...
-  dml/<custom_script>.txt
 ```
 
 The tree is reused across runs (no timestamp folder) so git and incremental
 unloads work. Table and materialized-view files get a compact partition
-template (no per-partition lists). Custom `*.sql` SELECTs are always re-run
-and written as GitHub-flavored tables under `dml/`.
+template (no per-partition lists). Custom `_*/` SELECT scripts are always
+re-run with `:schema` and written as GitHub-flavored tables under each schema.
 
 ## Tests
 

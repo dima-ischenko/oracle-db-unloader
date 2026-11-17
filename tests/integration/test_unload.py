@@ -32,24 +32,25 @@ def _unload(
 
 def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     time.sleep(1.1)
-    custom_dir = tmp_path / 'custom'
-    custom_dir.mkdir()
-    (custom_dir / 'currency.sql').write_text(
-        'select code, name from currency_dict order by code',
+    meta = tmp_path / '_meta'
+    meta.mkdir()
+    (meta / 'currency.sql').write_text(
+        'select :schema as owner, code, name from currency_dict order by code',
         encoding='utf-8',
     )
-    _unload(fresh_schema, tmp_path, custom_sql_dir=custom_dir)
+    _unload(fresh_schema, tmp_path)
 
     table = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
     sales = Path(tmp_path) / 'test' / 'tables' / 'sales_part.sql'
+    camel = Path(tmp_path) / 'test' / 'tables' / 'custom_metrics.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
     pkg_b = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_b.sql'
     seq = Path(tmp_path) / 'test' / 'sequences' / 'seq_demo.sql'
     syn = Path(tmp_path) / 'test' / 'synonyms' / 'syn_emp.sql'
-    dml = Path(tmp_path) / 'dml' / 'currency.txt'
+    dml = Path(tmp_path) / 'test' / '_meta' / 'currency.txt'
 
-    for path in (table, sales, view, pkg_s, pkg_b, seq, syn, dml):
+    for path in (table, sales, camel, view, pkg_s, pkg_b, seq, syn, dml):
         assert path.is_file(), path
 
     table_sql = table.read_text(encoding='utf-8')
@@ -76,8 +77,13 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert 'values less than' not in sales_sql.split('/*')[0]
     assert 'subpartition template' in sales_sql
 
+    camel_sql = camel.read_text(encoding='utf-8')
+    assert '"CUSTOM_metrics"' in camel_sql
+    assert 'comment on table "CUSTOM_metrics"' in camel_sql
+
     dml_text = dml.read_text(encoding='utf-8')
     assert dml_text.splitlines()[0].startswith('|')
+    assert 'TEST' in dml_text
     assert 'USD' in dml_text
     assert 'null' in dml_text
 

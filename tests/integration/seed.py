@@ -15,16 +15,17 @@ begin
              'PKG_DEMO',
              'SEQ_DEMO',
              'SYN_EMP',
-             'CURRENCY_DICT'
+             'CURRENCY_DICT',
+             'CUSTOM_metrics'
            )
   ) loop
     begin
       if rec.object_type = 'TABLE' then
-        execute immediate 'drop table ' || rec.object_name || ' cascade constraints purge';
+        execute immediate 'drop table "' || rec.object_name || '" cascade constraints purge';
       elsif rec.object_type = 'PACKAGE BODY' then
-        execute immediate 'drop package body ' || rec.object_name;
+        execute immediate 'drop package body "' || rec.object_name || '"';
       else
-        execute immediate 'drop ' || rec.object_type || ' ' || rec.object_name;
+        execute immediate 'drop ' || rec.object_type || ' "' || rec.object_name || '"';
       end if;
     exception
       when others then
@@ -82,6 +83,13 @@ CREATE_STATEMENTS = [
     """,
     'create sequence seq_demo',
     'create or replace synonym syn_emp for emp_heap',
+    """
+    create table "CUSTOM_metrics" (
+      id number,
+      "createdAt" varchar2(32)
+    )
+    """,
+    'comment on table "CUSTOM_metrics" is \'camel case metrics\'',
     """
     create table currency_dict (
       code varchar2(3),
