@@ -91,6 +91,14 @@ def discover_custom_sql(root: Path) -> List[Tuple[Path, str]]:
     return found
 
 
+def discover_schema_meta_sql(schema_root: Path) -> List[Path]:
+    """Find schema-specific scripts in ``<schema>/_meta/*.sql``."""
+    meta = Path(schema_root) / '_meta'
+    if not meta.is_dir():
+        return []
+    return sorted(path for path in meta.glob('*.sql') if path.is_file())
+
+
 def custom_sql_roots(
     output_dir: Path,
     custom_sql_dir: Optional[Path] = None,
@@ -123,13 +131,54 @@ def _warn_legacy_flat_sql(root: Path) -> None:
     )
 
 
+def _schema_meta_scripts(
+    roots: Sequence[Path],
+    schema: str,
+) -> Dict[str, Path]:
+    by_stem: Dict[str, Path] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in discover_schema_meta_sql(root / schema.lower()):
+            if path.stem not in by_stem:
+                by_stem[path.stem] = path
+    return by_stem
+
+
+def _run_custom_sql(
+    conn,
+    path: Path,
+    schema: str,
+    target: Path,
+) -> bool:
+    sql = path.read_text(encoding='utf-8').strip()
+    if not sql:
+        logger.warning('custom sql skipped empty file %s', path.as_posix())
+        return False
+    params = bind_params(sql, {'schema': schema})
+    result = conn.execute(text(sql), params)
+    columns = list(result.keys())
+    rows = [list(row) for row in result]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(format_table(columns, rows), encoding='utf-8')
+    logger.info(
+        'custom sql %s schema=%s -> %s (%d rows)',
+        path.name,
+        schema,
+        target.as_posix(),
+        len(rows),
+    )
+    return True
+
+
 def dump_custom_sql(
     engine: Engine,
     output_dir: Path,
     schemas: Sequence[str],
     custom_sql_dir: Optional[Path] = None,
 ) -> int:
-    roots = custom_sql_roots(Path(output_dir), custom_sql_dir)
+    target_root = Path(output_dir)
+    roots = custom_sql_roots(target_root, custom_sql_dir)
     scripts: List[Tuple[Path, str]] = []
     seen_rel: Dict[str, Path] = {}
     for root in roots:
@@ -144,40 +193,36 @@ def dump_custom_sql(
             seen_rel[rel] = path
             scripts.append((path, rel))
 
-    if not scripts:
+    schema_list = [schema.strip().upper() for schema in schemas if schema.strip()]
+    per_schema = {
+        schema: _schema_meta_scripts(roots, schema) for schema in schema_list
+    }
+    schema_script_count = sum(len(items) for items in per_schema.values())
+    if not scripts and schema_script_count == 0:
         if custom_sql_dir is not None:
             logger.info('custom sql: 0 script(s) from %s', custom_sql_dir)
         return 0
 
-    schema_list = [schema.strip().upper() for schema in schemas if schema.strip()]
     logger.info(
-        'custom sql: %d script(s) for %d schema(s)',
+        'custom sql: %d shared script(s), %d schema-specific for %d schema(s)',
         len(scripts),
+        schema_script_count,
         len(schema_list),
     )
     dumped = 0
     with engine.connect() as conn:
         for path, rel in scripts:
-            sql = path.read_text(encoding='utf-8').strip()
-            if not sql:
-                logger.warning('custom sql skipped empty file %s', path.as_posix())
-                continue
+            folder, _, stem = rel.partition('/')
             for schema in schema_list:
-                params = bind_params(sql, {'schema': schema})
-                result = conn.execute(text(sql), params)
-                columns = list(result.keys())
-                rows = [list(row) for row in result]
-                rendered = format_table(columns, rows)
-                target = Path(output_dir) / schema.lower() / f'{rel}.txt'
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(rendered, encoding='utf-8')
-                dumped += 1
-                logger.info(
-                    'custom sql %s schema=%s -> %s (%d rows)',
-                    rel,
-                    schema,
-                    target.as_posix(),
-                    len(rows),
-                )
+                if folder == '_meta' and stem in per_schema.get(schema, {}):
+                    continue
+                target = target_root / schema.lower() / f'{rel}.txt'
+                if _run_custom_sql(conn, path, schema, target):
+                    dumped += 1
+        for schema in schema_list:
+            for stem, path in per_schema[schema].items():
+                target = target_root / schema.lower() / '_meta' / f'{stem}.txt'
+                if _run_custom_sql(conn, path, schema, target):
+                    dumped += 1
     logger.info('custom sql: wrote %d file(s)', dumped)
     return dumped

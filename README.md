@@ -54,8 +54,9 @@ end with `;`; PL/SQL source still uses `/`.
 
 Custom SELECTs live in underscore-prefixed folders at the output root (or in
 `--custom-sql-dir`), for example `_meta/get_table_stats.sql`. Bind `:schema`
-to run the same query for every schema. Results are written per schema as
-`<schema>/_meta/get_table_stats.txt`.
+to run the same query for every schema. A script in `<schema>/_meta/*.sql`
+runs only for that schema (and overrides a shared `_meta` script of the same
+name). Results are written as `<schema>/_meta/<script>.txt`.
 
 ## Library
 
@@ -92,6 +93,8 @@ output_dir/
   scott/packages/*_s.sql *_b.sql
   scott/tables/*.sql
   scott/_meta/get_table_stats.txt
+  scott/_meta/local.sql
+  scott/_meta/local.txt
   hr/_meta/get_table_stats.txt
   ...
 ```
@@ -99,8 +102,8 @@ output_dir/
 The tree is reused across runs (no timestamp folder) so git and incremental
 unloads work. Table and materialized-view files get an `alter table ... modify
 partition by ...` statement (template only, no per-partition lists). Custom
-`_*/` SELECT scripts are always re-run with `:schema` and written as
-GitHub-flavored tables under each schema.
+`_*/` SELECT scripts are always re-run with `:schema`. Shared scripts write
+under every schema; `<schema>/_meta/*.sql` writes only to that schema.
 
 ## Tests
 
