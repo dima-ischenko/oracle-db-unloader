@@ -5,7 +5,7 @@ talks to Oracle through SQLAlchemy and `oracledb` (thin mode). Object DDL still
 comes from packaged SQL scripts; Python lists objects, binds `:schema` /
 `:obj_name` / `:obj_type`, writes files, and tracks incremental state.
 
-Pass in a SQLAlchemy engine you already own (same pattern as xoverrr). The
+Pass in a SQLAlchemy engine you already own. The
 unloader does not dispose it.
 
 ## Install
