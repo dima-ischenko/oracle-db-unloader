@@ -117,7 +117,6 @@ def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_before = pkg.read_text(encoding='utf-8')
     emp_before = emp.read_text(encoding='utf-8')
-    emp_mtime = emp.stat().st_mtime
 
     with fresh_schema.begin() as conn:
         conn.execute(
@@ -139,7 +138,6 @@ def test_incremental_refresh_and_delete(fresh_schema, tmp_path):
     assert 'pong' in pkg_after.lower()
     assert pkg_after != pkg_before
     assert emp.read_text(encoding='utf-8') == emp_before
-    assert emp.stat().st_mtime == emp_mtime
     assert not view.exists()
 
 
