@@ -49,7 +49,7 @@ def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path
             ['SCOTT', 'HR'],
             tmp_path,
             object_types=['table', 'view'],
-            max_connections=1,
+            max_workers=1,
         )
 
     assert written == [('SCOTT', 'TABLE', 'EMP'), ('SCOTT', 'VIEW', 'V_EMP')]
@@ -80,7 +80,7 @@ def test_same_type_failure_does_not_write_remaining(monkeypatch, tmp_path):
             ['SCOTT'],
             tmp_path,
             object_types=['table'],
-            max_connections=1,
+            max_workers=1,
         )
     assert written == ['T1']
 
@@ -109,7 +109,7 @@ def test_progress_and_summary_logging(monkeypatch, tmp_path, caplog):
         ['SCOTT'],
         tmp_path,
         object_types=['table'],
-        max_connections=1,
+        max_workers=1,
     )
 
     assert 'unload complete added=1 updated=0 deleted=1' in caplog.text
@@ -127,7 +127,7 @@ def test_empty_schema_writes_nothing(monkeypatch, tmp_path, caplog):
         ['EMPTY'],
         tmp_path,
         object_types=['table'],
-        max_connections=1,
+        max_workers=1,
     )
     assert not (tmp_path / 'empty').exists()
     assert not state_path(tmp_path, 'EMPTY').exists()
@@ -148,7 +148,7 @@ def test_empty_schema_deletes_stale_files(monkeypatch, tmp_path):
         ['EMPTY'],
         tmp_path,
         object_types=['table'],
-        max_connections=1,
+        max_workers=1,
     )
     assert not stale.exists()
     assert get_last_unload_at(load_state(tmp_path, 'EMPTY'), 'TABLE') is None

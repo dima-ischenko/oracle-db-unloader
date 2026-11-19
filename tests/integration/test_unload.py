@@ -22,7 +22,7 @@ def _unload(
         engine,
         schemas=['TEST'],
         output_dir=tmp_path,
-        max_connections=2,
+        max_workers=2,
         custom_sql_dir=custom_sql_dir,
         object_types=object_types,
         full=full,

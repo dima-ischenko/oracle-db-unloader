@@ -34,11 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
         help='Directory for SQL files and per-schema .unloader_state.json',
     )
     parser.add_argument(
-        '--max-connections',
-        dest='max_connections',
+        '--max-workers',
+        dest='max_workers',
         type=int,
         default=5,
-        help='SQLAlchemy pool size / parallel unload workers (default: 5)',
+        help='Parallel unload workers / SQLAlchemy pool size (default: 5)',
     )
     parser.add_argument(
         '--custom-sql-dir',
@@ -89,8 +89,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if not args.db_url and not (args.db_login and args.db_pass and args.db_tns):
         parser.error('provide --db-url or --db-login, --db-pass, and --db-tns')
-    if args.max_connections < 1:
-        parser.error('--max-connections must be >= 1')
+    if args.max_workers < 1:
+        parser.error('--max-workers must be >= 1')
     if args.lookback_minutes < 0:
         parser.error('--lookback-minutes must be >= 0')
     if args.object_types:
@@ -133,7 +133,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     engine = create_engine(
         url,
-        pool_size=args.max_connections,
+        pool_size=args.max_workers,
         max_overflow=0,
         pool_pre_ping=True,
     )
@@ -142,7 +142,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             engine,
             schemas=_split_csv(args.schemas),
             output_dir=args.output_dir,
-            max_connections=args.max_connections,
+            max_workers=args.max_workers,
             custom_sql_dir=args.custom_sql_dir,
             object_types=args.object_types,
             full=args.full,

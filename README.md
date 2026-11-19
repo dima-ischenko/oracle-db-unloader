@@ -21,7 +21,7 @@ db-unloader --db-url oracle+oracledb://system:pass@localhost:1521/?service_name=
   --schemas scott,hr \
   --object-types table,view,package \
   --output-dir ./ddl \
-  --max-connections 5 \
+  --max-workers 5 \
   --custom-sql-dir ./dictionary_sql
 ```
 
@@ -76,7 +76,7 @@ try:
         schemas=['SCOTT'],
         object_types=['table', 'package'],
         output_dir='/data/ddl',
-        max_connections=5,
+        max_workers=5,
         custom_sql_dir='/data/dictionary_sql',
     )
 finally:

@@ -151,7 +151,7 @@ def _write_objects(
     disk: Set[str],
     output_dir: Path,
     remaining_deletes: int,
-    max_connections: int,
+    max_workers: int,
     stats: RunStats,
     schema: str,
     object_type: str,
@@ -159,7 +159,7 @@ def _write_objects(
     remaining_writes = len(to_write)
     if not to_write:
         return
-    workers = max(1, min(max_connections, remaining_writes))
+    workers = max(1, min(max_workers, remaining_writes))
     iterator = iter(to_write)
     pool = ThreadPoolExecutor(max_workers=workers)
     futures = {}
@@ -216,14 +216,14 @@ def _unload_object_type(
     *,
     last_unload_at: Optional[datetime],
     lookback_minutes: int,
-    max_connections: int,
+    max_workers: int,
     full: bool,
     stats: RunStats,
 ) -> None:
     disk = walk_schema_files(output_dir, schema, [object_type])
     watermark = None if full else last_unload_at
     to_write, to_delete = plan_actions(objects, disk, watermark, lookback_minutes)
-    workers = max(1, min(max_connections, len(to_write) or 1))
+    workers = max(1, min(max_workers, len(to_write) or 1))
     logger.info(
         'schema %s type %s: inventory=%d write=%d delete=%d workers=%d '
         'watermark=%s',
@@ -241,7 +241,7 @@ def _unload_object_type(
         disk,
         output_dir,
         remaining_deletes=len(to_delete),
-        max_connections=max_connections,
+        max_workers=max_workers,
         stats=stats,
         schema=schema,
         object_type=object_type,
@@ -263,7 +263,7 @@ def unload_schema(
     *,
     object_types: Sequence[str],
     lookback_minutes: int,
-    max_connections: int,
+    max_workers: int,
     full: bool,
     stats: RunStats,
 ) -> None:
@@ -285,7 +285,7 @@ def unload_schema(
             output_dir,
             last_unload_at=get_last_unload_at(state, object_type),
             lookback_minutes=lookback_minutes,
-            max_connections=max_connections,
+            max_workers=max_workers,
             full=full,
             stats=stats,
         )
@@ -309,7 +309,7 @@ def unload(
     schemas: Sequence[str],
     output_dir: Union[str, Path],
     *,
-    max_connections: int = 5,
+    max_workers: int = 5,
     custom_sql_dir: Union[str, Path, None] = None,
     object_types: Optional[Sequence[str]] = None,
     full: bool = False,
@@ -318,13 +318,13 @@ def unload(
     """Unload schema objects using a caller-owned SQLAlchemy engine.
 
     The engine is never disposed here. Apply pool sizing on the engine you
-    pass in; ``max_connections`` only caps parallel workers.
+    pass in; ``max_workers`` only caps parallel workers.
 
     Any exception stops the run: remaining object types and schemas are not
     started, and watermarks are not advanced for the failed type.
     """
-    if max_connections < 1:
-        raise ValueError('max_connections must be >= 1')
+    if max_workers < 1:
+        raise ValueError('max_workers must be >= 1')
     schema_list = _normalize_schemas(schemas)
     type_list = normalize_object_types(object_types)
     target = Path(output_dir)
@@ -351,7 +351,7 @@ def unload(
                 target,
                 object_types=type_list,
                 lookback_minutes=lookback_minutes,
-                max_connections=max_connections,
+                max_workers=max_workers,
                 full=full,
                 stats=stats,
             )
