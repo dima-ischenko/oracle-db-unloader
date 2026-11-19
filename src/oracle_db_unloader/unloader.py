@@ -5,7 +5,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Union
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -23,11 +23,7 @@ from .inventory import (
     walk_schema_files,
 )
 from .logger import get_logger
-from .metadata import (
-    fetch_partition_info,
-    format_file_header,
-    format_partition_template_block,
-)
+from .metadata import fetch_partition_info, format_partition_template_block
 from .resources import (
     as_text,
     bind_params,
@@ -93,13 +89,11 @@ def write_object(engine: Engine, obj: DbObject, output_dir: Path) -> None:
     with engine.connect() as conn:
         apply_session_transforms(conn)
         ddl = fetch_object_ddl(conn, obj)
-        header = ''
         footer = ''
         if obj.object_type in HEADER_TYPES:
             partition = fetch_partition_info(conn, obj)
-            header = format_file_header(partition)
             footer = format_partition_template_block(obj.name, partition)
-        content = header + ddl
+        content = ddl
         if footer:
             content = content.rstrip() + '\n\n' + footer + '\n'
         path = output_dir / obj.relpath

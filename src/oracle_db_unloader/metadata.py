@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -32,57 +32,33 @@ class PartitionInfo:
     template: Sequence[SubpartitionTemplate] = field(default_factory=tuple)
 
 
-def format_partition_header_lines(info: Optional[PartitionInfo]) -> List[str]:
-    if info is None:
-        return []
-    line = f'-- partitioned: {info.partitioning_type} ({info.part_key})'
-    if info.interval:
-        line += f' INTERVAL({info.interval})'
-    lines = [line]
-    sub_type = info.subpartitioning_type
-    if sub_type and sub_type.upper() != 'NONE' and info.subpart_key:
-        sub = f'--              {sub_type} SUBPART ({info.subpart_key})'
-        if info.template:
-            sub += f' template {len(info.template)} values'
-        lines.append(sub)
-    return lines
-
-
 def format_partition_template_block(
     table_name: str,
     info: Optional[PartitionInfo],
 ) -> str:
     if info is None:
         return ''
-    part_by = f'partition by {info.partitioning_type.lower()} ({info.part_key})'
+    part_by = f'PARTITION BY {info.partitioning_type.upper()} ({info.part_key})'
     if info.interval:
-        part_by += f' interval({info.interval.lower()})'
+        part_by += f' INTERVAL({info.interval})'
     lines = [
-        f'alter table {format_oracle_ident(table_name)} modify {part_by}',
+        f'ALTER TABLE {format_oracle_ident(table_name)} MODIFY {part_by}',
     ]
     sub_type = info.subpartitioning_type
     if sub_type and sub_type.upper() != 'NONE' and info.subpart_key:
-        lines.append(
-            f'subpartition by {sub_type.lower()} ({info.subpart_key})'
-        )
+        lines.append(f'SUBPARTITION BY {sub_type.upper()} ({info.subpart_key})')
         if info.template:
-            lines.append('   subpartition template')
+            lines.append('   SUBPARTITION TEMPLATE')
             lines.append('   (')
             last = len(info.template) - 1
             for i, item in enumerate(info.template):
                 comma = ',' if i < last else ''
                 lines.append(
-                    f'    subpartition {format_oracle_ident(item.name)} values ({item.high_bound}){comma}'
+                    f'    SUBPARTITION {format_oracle_ident(item.name)} '
+                    f'VALUES ({item.high_bound}){comma}'
                 )
             lines.append('  )')
     return ensure_semicolon('\n'.join(lines)).rstrip() + '\n'
-
-
-def format_file_header(partition: Optional[PartitionInfo]) -> str:
-    lines = format_partition_header_lines(partition)
-    if not lines:
-        return ''
-    return '\n'.join(lines) + '\n\n'
 
 
 def fetch_partition_info(conn: Connection, obj: DbObject) -> Optional[PartitionInfo]:

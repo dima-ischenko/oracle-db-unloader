@@ -56,9 +56,9 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     assert '"EMP_HEAP"' not in table_sql
     assert '"ID"' not in table_sql
 
-    sales_sql = sales.read_text(encoding='utf-8').lower()
-    assert 'alter table sales_part modify' in sales_sql
-    assert 'partition p2024' not in sales_sql
+    sales_sql = sales.read_text(encoding='utf-8')
+    assert 'ALTER TABLE sales_part MODIFY PARTITION BY RANGE (sale_date)' in sales_sql
+    assert 'partition p2024' not in sales_sql.lower()
 
     camel_sql = camel.read_text(encoding='utf-8')
     assert '"MixedCase_metrics"' in camel_sql
