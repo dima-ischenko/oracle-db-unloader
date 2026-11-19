@@ -84,4 +84,10 @@ select owner,
          where s.owner = 'PUBLIC'
            and s.table_owner = upper(:schema)
        ) objects
+    where not exists (select null 
+                from dba_nested_tables dn
+              where dn.owner = objects.owner
+                and dn.table_name = objects.object_name 
+                and objects.object_type = 'TABLE'
+              )   
  order by object_type, object_name
