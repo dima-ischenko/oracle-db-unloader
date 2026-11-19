@@ -56,7 +56,7 @@ Custom SELECTs live in underscore-prefixed folders at the output root (or in
 `--custom-sql-dir`), for example `_meta/get_table_stats.sql`. Bind `:schema`
 to run the same query for every schema. A script in `<schema>/_meta/*.sql`
 runs only for that schema (and overrides a shared `_meta` script of the same
-name). Results are written as `<schema>/_meta/<script>.txt`.
+name). Results are written as `<schema>/_meta/<script>.md`.
 
 ## Library
 
@@ -92,11 +92,11 @@ output_dir/
   scott/functions/*.sql
   scott/packages/*_s.sql *_b.sql
   scott/tables/*.sql
-  scott/_meta/get_table_stats.txt
+  scott/_meta/get_table_stats.md
   scott/_meta/local.sql
-  scott/_meta/local.txt
+  scott/_meta/local.md
   hr/.unloader_state.json
-  hr/_meta/get_table_stats.txt
+  hr/_meta/get_table_stats.md
   ...
 ```
 

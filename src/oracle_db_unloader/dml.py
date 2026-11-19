@@ -216,12 +216,12 @@ def dump_custom_sql(
             for schema in schema_list:
                 if folder == '_meta' and stem in per_schema.get(schema, {}):
                     continue
-                target = target_root / schema.lower() / f'{rel}.txt'
+                target = target_root / schema.lower() / f'{rel}.md'
                 if _run_custom_sql(conn, path, schema, target):
                     dumped += 1
         for schema in schema_list:
             for stem, path in per_schema[schema].items():
-                target = target_root / schema.lower() / '_meta' / f'{stem}.txt'
+                target = target_root / schema.lower() / '_meta' / f'{stem}.md'
                 if _run_custom_sql(conn, path, schema, target):
                     dumped += 1
     logger.info('custom sql: wrote %d file(s)', dumped)

@@ -57,10 +57,10 @@ def test_dump_custom_sql_writes_per_schema(tmp_path):
         custom_sql_dir=sql_dir,
     )
     assert dumped == 2
-    assert 'SCOTT' in (output / 'scott' / '_meta' / 'get_table_stats.txt').read_text(
+    assert 'SCOTT' in (output / 'scott' / '_meta' / 'get_table_stats.md').read_text(
         encoding='utf-8'
     )
-    assert 'HR' in (output / 'hr' / '_meta' / 'get_table_stats.txt').read_text(
+    assert 'HR' in (output / 'hr' / '_meta' / 'get_table_stats.md').read_text(
         encoding='utf-8'
     )
 
@@ -75,7 +75,7 @@ def test_dump_custom_sql_reads_underscore_dir_from_output_root(tmp_path):
     conn = _FakeConnection(columns=['OWNER'], rows_by_schema={'SCOTT': [['SCOTT']]})
     dumped = dump_custom_sql(_FakeEngine(conn), tmp_path, ['SCOTT'])
     assert dumped == 1
-    assert (tmp_path / 'scott' / '_meta' / 'get_table_stats.txt').is_file()
+    assert (tmp_path / 'scott' / '_meta' / 'get_table_stats.md').is_file()
 
 
 def test_dump_schema_specific_meta_sql_only_that_schema(tmp_path):
@@ -91,8 +91,8 @@ def test_dump_schema_specific_meta_sql_only_that_schema(tmp_path):
     )
     dumped = dump_custom_sql(_FakeEngine(conn), tmp_path, ['SCOTT', 'HR'])
     assert dumped == 1
-    assert (tmp_path / 'scott' / '_meta' / 'local.txt').is_file()
-    assert not (tmp_path / 'hr' / '_meta' / 'local.txt').exists()
+    assert (tmp_path / 'scott' / '_meta' / 'local.md').is_file()
+    assert not (tmp_path / 'hr' / '_meta' / 'local.md').exists()
 
 
 def test_schema_meta_overrides_shared_script(tmp_path):

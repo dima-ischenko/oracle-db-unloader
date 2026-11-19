@@ -45,7 +45,7 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     camel = Path(tmp_path) / 'test' / 'tables' / 'mixedcase_metrics.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
-    dml = Path(tmp_path) / 'test' / '_meta' / 'currency.txt'
+    dml = Path(tmp_path) / 'test' / '_meta' / 'currency.md'
 
     for path in (table, sales, camel, view, pkg_s, dml):
         assert path.is_file(), path

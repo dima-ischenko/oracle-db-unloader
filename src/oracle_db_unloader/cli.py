@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
             '(e.g. _meta/get_table_stats.sql). If omitted, scripts are read '
             'from output-dir. Bind :schema to run the same query for every '
             'schema. A script in <schema>/_meta/*.sql runs only for that '
-            'schema. Results go to <schema>/_meta/<script>.txt'
+            'schema. Results go to <schema>/_meta/<script>.md'
         ),
     )
     parser.add_argument(
