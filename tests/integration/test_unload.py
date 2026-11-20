@@ -6,7 +6,11 @@ from pathlib import Path
 from sqlalchemy import text
 
 from oracle_db_unloader import unload
-from oracle_db_unloader.inventory import fetch_inventory, max_last_ddl_time, normalize_ddl_time
+from oracle_db_unloader.inventory import (
+    fetch_inventory,
+    max_last_ddl_time,
+    normalize_ddl_time,
+)
 from oracle_db_unloader.state import get_last_unload_at, load_state
 
 
@@ -78,7 +82,9 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
 
     table_stamp = get_last_unload_at(load_state(tmp_path, 'TEST'), 'TABLE')
     tables = [
-        obj for obj in fetch_inventory(fresh_schema, 'TEST') if obj.object_type == 'TABLE'
+        obj
+        for obj in fetch_inventory(fresh_schema, 'TEST')
+        if obj.object_type == 'TABLE'
     ]
     assert normalize_ddl_time(table_stamp) == max_last_ddl_time(tables)
 
@@ -140,10 +146,12 @@ def test_dependencies_write_view_to_table_paths(fresh_schema, tmp_path):
     assert table_deps.is_file()
     view_text = view_deps.read_text(encoding='utf-8')
     table_text = table_deps.read_text(encoding='utf-8')
-    assert 'test.emp_v(view) > test.emp_heap(table)' in view_text
-    assert 'downstream' in view_text
-    assert 'test.emp_v(view) > test.emp_heap(table)' in table_text
-    assert 'upstream' in table_text
+    assert '## Downstream' in view_text
+    assert '> test.emp_heap(table)' in view_text
+    assert 'emp_v(view)' not in view_text
+    assert '## Upstream' in table_text
+    assert 'test.emp_v(view) >' in table_text
+    assert 'emp_heap(table)' not in table_text
     assert not (
         Path(tmp_path) / 'test' / '_deps' / 'tables' / 'currency_dict.md'
     ).exists()

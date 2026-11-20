@@ -8,7 +8,6 @@ from typing import Dict, Iterable, List, Sequence, Set, Tuple
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from .dml import format_table
 from .inventory import (
     TYPE_FOLDERS,
     TYPE_SUFFIX,
@@ -19,17 +18,6 @@ from .logger import get_logger
 from .resources import load_sql
 
 logger = get_logger(__name__)
-
-DEP_COLUMNS = (
-    'xref_path',
-    'owner',
-    'name',
-    'type',
-    'ref_type',
-    'full_ref_object_name',
-    'priority',
-    'lvl',
-)
 
 
 @dataclass(frozen=True)
@@ -42,33 +30,11 @@ class Node:
     def label(self) -> str:
         return f'{self.owner.lower()}.{self.name.lower()}({self.type.lower()})'
 
-    @property
-    def full_name(self) -> str:
-        return f'{self.owner.lower()}.{self.name.lower()}'
-
 
 @dataclass(frozen=True)
 class DepRow:
     xref_path: str
-    owner: str
-    name: str
-    type: str
     ref_type: str
-    full_ref_object_name: str
-    priority: int
-    lvl: int
-
-    def as_tuple(self) -> Tuple[str, str, str, str, str, str, int, int]:
-        return (
-            self.xref_path,
-            self.owner,
-            self.name,
-            self.type,
-            self.ref_type,
-            self.full_ref_object_name,
-            self.priority,
-            self.lvl,
-        )
 
 
 @dataclass(frozen=True)
@@ -115,10 +81,18 @@ def fetch_dependency_edges(engine: Engine) -> List[Tuple[Node, Node]]:
 def dependency_rows(graph: DependencyGraph, root: Node) -> List[DepRow]:
     rows = _walk_upstream(graph, root)
     rows.extend(_walk_downstream(graph, root))
-    rows.sort(
-        key=lambda row: (row.priority, row.xref_path, row.owner, row.name, row.type)
-    )
+    rows.sort(key=lambda row: (row.ref_type != 'upstream', row.xref_path))
     return rows
+
+
+def format_dep_markdown(rows: Sequence[DepRow]) -> str:
+    sections: List[str] = []
+    for title, ref_type in (('Upstream', 'upstream'), ('Downstream', 'downstream')):
+        paths = [row.xref_path for row in rows if row.ref_type == ref_type]
+        if not paths:
+            continue
+        sections.append(f'## {title}\n\n' + '\n'.join(paths) + '\n')
+    return '\n'.join(sections)
 
 
 def _neighbors(mapping: Dict[Node, Tuple[Node, ...]], node: Node) -> Tuple[Node, ...]:
@@ -128,9 +102,9 @@ def _neighbors(mapping: Dict[Node, Tuple[Node, ...]], node: Node) -> Tuple[Node,
 def _walk_upstream(graph: DependencyGraph, root: Node) -> List[DepRow]:
     rows: List[DepRow] = []
     for first in _neighbors(graph.dependents, root):
-        stack: List[Tuple[Node, Tuple[Node, ...], int]] = [(first, (first,), 1)]
+        stack: List[Tuple[Node, Tuple[Node, ...]]] = [(first, (first,))]
         while stack:
-            current, path, depth = stack.pop()
+            current, path = stack.pop()
             kids = tuple(
                 kid
                 for kid in _neighbors(graph.dependents, current)
@@ -138,20 +112,12 @@ def _walk_upstream(graph: DependencyGraph, root: Node) -> List[DepRow]:
             )
             if kids:
                 for kid in kids:
-                    stack.append((kid, path + (kid,), depth + 1))
+                    stack.append((kid, path + (kid,)))
                 continue
             rows.append(
                 DepRow(
-                    xref_path=' > '.join(
-                        [node.label for node in reversed(path)] + [root.label]
-                    ),
-                    owner=current.owner,
-                    name=current.name,
-                    type=current.type,
+                    xref_path=_format_xref(reversed(path), toward_root=True),
                     ref_type='upstream',
-                    full_ref_object_name=root.full_name,
-                    priority=0,
-                    lvl=depth,
                 )
             )
     return rows
@@ -160,9 +126,9 @@ def _walk_upstream(graph: DependencyGraph, root: Node) -> List[DepRow]:
 def _walk_downstream(graph: DependencyGraph, root: Node) -> List[DepRow]:
     rows: List[DepRow] = []
     for first in _neighbors(graph.references, root):
-        stack: List[Tuple[Node, Tuple[Node, ...], int]] = [(first, (first,), 1)]
+        stack: List[Tuple[Node, Tuple[Node, ...]]] = [(first, (first,))]
         while stack:
-            current, path, depth = stack.pop()
+            current, path = stack.pop()
             kids = tuple(
                 kid
                 for kid in _neighbors(graph.references, current)
@@ -170,21 +136,23 @@ def _walk_downstream(graph: DependencyGraph, root: Node) -> List[DepRow]:
             )
             if kids:
                 for kid in kids:
-                    stack.append((kid, path + (kid,), depth + 1))
+                    stack.append((kid, path + (kid,)))
                 continue
             rows.append(
                 DepRow(
-                    xref_path=' > '.join([root.label] + [node.label for node in path]),
-                    owner=current.owner,
-                    name=current.name,
-                    type=current.type,
+                    xref_path=_format_xref(path, toward_root=False),
                     ref_type='downstream',
-                    full_ref_object_name=current.full_name,
-                    priority=1,
-                    lvl=depth,
                 )
             )
     return rows
+
+
+def _format_xref(nodes: Iterable[Node], *, toward_root: bool) -> str:
+    """Omit the file's own object; mark direction with a leading or trailing '>'."""
+    body = ' > '.join(node.label for node in nodes)
+    if toward_root:
+        return f'{body} >'
+    return f'> {body}'
 
 
 def walk_deps_files(
@@ -241,10 +209,7 @@ def write_schema_dependencies(
         known.add(relpath)
         target = Path(output_dir) / relpath
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            format_table(DEP_COLUMNS, [row.as_tuple() for row in rows]),
-            encoding='utf-8',
-        )
+        target.write_text(format_dep_markdown(rows), encoding='utf-8')
         written += 1
         logger.info(
             'dependencies %s schema=%s type=%s rows=%d',

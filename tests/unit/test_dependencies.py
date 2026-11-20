@@ -4,11 +4,11 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from oracle_db_unloader.dependencies import (
-    DEP_COLUMNS,
     Node,
     build_graph,
     dependency_rows,
     dump_dependencies,
+    format_dep_markdown,
     write_schema_dependencies,
 )
 from oracle_db_unloader.inventory import DbObject
@@ -38,43 +38,25 @@ def _rows_by_type(rows):
     }
 
 
-def test_direct_downstream_includes_root():
+def test_direct_downstream_omits_root():
     graph = build_graph(
         [
             _edge(('HR', 'EMP_V', 'VIEW'), ('SCOTT', 'EMP', 'TABLE')),
         ]
     )
     rows = _rows_by_type(dependency_rows(graph, Node('HR', 'EMP_V', 'VIEW')))
-    assert [row.xref_path for row in rows['downstream']] == [
-        'hr.emp_v(view) > scott.emp(table)'
-    ]
-    leaf = rows['downstream'][0]
-    assert leaf.owner == 'SCOTT'
-    assert leaf.name == 'EMP'
-    assert leaf.type == 'TABLE'
-    assert leaf.full_ref_object_name == 'scott.emp'
-    assert leaf.priority == 1
-    assert leaf.lvl == 1
+    assert [row.xref_path for row in rows['downstream']] == ['> scott.emp(table)']
     assert rows['upstream'] == []
 
 
-def test_direct_upstream_includes_root():
+def test_direct_upstream_omits_root():
     graph = build_graph(
         [
             _edge(('HR', 'P_REPORT', 'PROCEDURE'), ('SCOTT', 'EMP_V', 'VIEW')),
         ]
     )
     rows = _rows_by_type(dependency_rows(graph, Node('SCOTT', 'EMP_V', 'VIEW')))
-    assert [row.xref_path for row in rows['upstream']] == [
-        'hr.p_report(procedure) > scott.emp_v(view)'
-    ]
-    leaf = rows['upstream'][0]
-    assert leaf.owner == 'HR'
-    assert leaf.name == 'P_REPORT'
-    assert leaf.type == 'PROCEDURE'
-    assert leaf.full_ref_object_name == 'scott.emp_v'
-    assert leaf.priority == 0
-    assert leaf.lvl == 1
+    assert [row.xref_path for row in rows['upstream']] == ['hr.p_report(procedure) >']
     assert rows['downstream'] == []
 
 
@@ -94,24 +76,18 @@ def test_multihop_and_diamond_paths():
         dependency_rows(graph, Node('HR', 'PKG_REPORT', 'PACKAGE BODY'))
     )['downstream']
     assert [row.xref_path for row in down] == [
-        'hr.pkg_report(package body) > scott.emp_v(view) > scott.emp(table)',
-        'hr.pkg_report(package body) > scott.emp_v(view) > scott.emp_v2(view) > scott.emp(table)',
+        '> scott.emp_v(view) > scott.emp(table)',
+        '> scott.emp_v(view) > scott.emp_v2(view) > scott.emp(table)',
     ]
-    assert down[0].lvl == 2
-    assert down[1].lvl == 3
-    assert down[1].full_ref_object_name == 'scott.emp'
 
     up = _rows_by_type(dependency_rows(graph, Node('SCOTT', 'EMP_V', 'VIEW')))[
         'upstream'
     ]
     assert [row.xref_path for row in up] == [
-        'hr.dept_v2(view) > hr.dept_v(view) > scott.emp_v(view)',
-        'hr.other_v(view) > scott.emp_v(view)',
-        'hr.pkg_report(package body) > scott.emp_v(view)',
+        'hr.dept_v2(view) > hr.dept_v(view) >',
+        'hr.other_v(view) >',
+        'hr.pkg_report(package body) >',
     ]
-    assert [row.lvl for row in up] == [2, 1, 1]
-    assert up[0].owner == 'HR'
-    assert up[0].name == 'DEPT_V2'
 
 
 def test_cycle_does_not_loop():
@@ -123,8 +99,8 @@ def test_cycle_does_not_loop():
     )
     rows = dependency_rows(graph, Node('A', 'T1', 'TABLE'))
     assert {row.xref_path for row in rows} == {
-        'a.t2(table) > a.t1(table)',
-        'a.t1(table) > a.t2(table)',
+        'a.t2(table) >',
+        '> a.t2(table)',
     }
 
 
@@ -159,9 +135,16 @@ def test_write_schema_dependencies_layout_and_stale_delete(tmp_path):
     assert written == 1
     path = tmp_path / 'scott' / '_deps' / 'views' / 'emp_v.md'
     text = path.read_text(encoding='utf-8')
-    assert 'xref_path' in text
-    assert 'scott.pkg_x(package body) > scott.emp_v(view)' in text
-    assert 'scott.emp_v(view) > scott.emp(table)' in text
+    assert text == (
+        '## Upstream\n'
+        '\n'
+        'scott.pkg_x(package body) >\n'
+        '\n'
+        '## Downstream\n'
+        '\n'
+        '> scott.emp(table)\n'
+    )
+    assert 'scott.emp_v(view)' not in text
     assert not stale.exists()
     assert not empty_prev.exists()
     assert other_type.read_text(encoding='utf-8') == 'keep-if-not-selected\n'
@@ -237,14 +220,7 @@ def test_unload_runs_dependencies_after_ddl(monkeypatch, tmp_path):
     assert order == ['ddl', 'deps', 'custom']
 
 
-def test_dep_columns_match_sql_aliases():
-    assert DEP_COLUMNS == (
-        'xref_path',
-        'owner',
-        'name',
-        'type',
-        'ref_type',
-        'full_ref_object_name',
-        'priority',
-        'lvl',
-    )
+def test_format_dep_markdown_omits_empty_section():
+    graph = build_graph([_edge(('HR', 'EMP_V', 'VIEW'), ('SCOTT', 'EMP', 'TABLE'))])
+    rows = dependency_rows(graph, Node('HR', 'EMP_V', 'VIEW'))
+    assert format_dep_markdown(rows) == ('## Downstream\n\n> scott.emp(table)\n')
