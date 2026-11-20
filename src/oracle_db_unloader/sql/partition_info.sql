@@ -2,7 +2,7 @@ select pt.partitioning_type,
        pt.subpartitioning_type,
        pt.interval,
        pt.partition_count,
-       pt.subpartition_count,
+       pt.def_subpartition_count,
        (
          select listagg(pk.column_name, ',') within group (order by pk.column_position)
            from dba_part_key_columns pk
