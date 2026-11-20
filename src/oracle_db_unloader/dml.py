@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -145,30 +147,78 @@ def _schema_meta_scripts(
     return by_stem
 
 
-def _run_custom_sql(
-    conn,
-    path: Path,
-    schema: str,
-    target: Path,
-) -> bool:
-    sql = path.read_text(encoding='utf-8').strip()
+@dataclass(frozen=True)
+class _SqlJob:
+    path: Path
+    schema: str
+    target: Path
+
+
+def _run_custom_sql(engine: Engine, job: _SqlJob) -> Optional[int]:
+    sql = job.path.read_text(encoding='utf-8').strip()
     if not sql:
-        logger.warning('custom sql skipped empty file %s', path.as_posix())
-        return False
-    params = bind_params(sql, {'schema': schema})
-    result = conn.execute(text(sql), params)
-    columns = list(result.keys())
-    rows = [list(row) for row in result]
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(format_table(columns, rows), encoding='utf-8')
-    logger.info(
-        'custom sql %s schema=%s -> %s (%d rows)',
-        path.name,
-        schema,
-        target.as_posix(),
-        len(rows),
-    )
-    return True
+        logger.warning('custom sql skipped empty file %s', job.path.as_posix())
+        return None
+    params = bind_params(sql, {'schema': job.schema})
+    with engine.connect() as conn:
+        result = conn.execute(text(sql), params)
+        columns = list(result.keys())
+        rows = [list(row) for row in result]
+    job.target.parent.mkdir(parents=True, exist_ok=True)
+    job.target.write_text(format_table(columns, rows), encoding='utf-8')
+    return len(rows)
+
+
+def _run_custom_sql_jobs(
+    engine: Engine,
+    jobs: Sequence[_SqlJob],
+    workers: int,
+) -> int:
+    remaining = len(jobs)
+    iterator = iter(jobs)
+    pool = ThreadPoolExecutor(max_workers=workers)
+    futures = {}
+    dumped = 0
+    try:
+        for _ in range(workers):
+            job = next(iterator, None)
+            if job is None:
+                break
+            futures[pool.submit(_run_custom_sql, engine, job)] = job
+        while futures:
+            done, _pending = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                job = futures.pop(future)
+                try:
+                    row_count = future.result()
+                except Exception as exc:
+                    logger.exception(
+                        'failed custom sql %s schema=%s',
+                        job.path.name,
+                        job.schema,
+                    )
+                    raise RuntimeError(
+                        f'failed custom sql {job.path.name} schema={job.schema}'
+                    ) from exc
+                remaining -= 1
+                if row_count is not None:
+                    dumped += 1
+                    logger.info(
+                        'custom sql %s schema=%s -> %s (%d rows) remaining=%d',
+                        job.path.name,
+                        job.schema,
+                        job.target.as_posix(),
+                        row_count,
+                        remaining,
+                    )
+                nxt = next(iterator, None)
+                if nxt is not None:
+                    futures[pool.submit(_run_custom_sql, engine, nxt)] = nxt
+    finally:
+        for future in list(futures):
+            future.cancel()
+        pool.shutdown(wait=True, cancel_futures=True)
+    return dumped
 
 
 def dump_custom_sql(
@@ -176,6 +226,8 @@ def dump_custom_sql(
     output_dir: Path,
     schemas: Sequence[str],
     custom_sql_dir: Optional[Path] = None,
+    *,
+    max_workers: int = 5,
 ) -> int:
     target_root = Path(output_dir)
     roots = custom_sql_roots(target_root, custom_sql_dir)
@@ -203,26 +255,38 @@ def dump_custom_sql(
             logger.info('custom sql: 0 script(s) from %s', custom_sql_dir)
         return 0
 
+    jobs: List[_SqlJob] = []
+    for path, rel in scripts:
+        folder, _, stem = rel.partition('/')
+        for schema in schema_list:
+            if folder == '_meta' and stem in per_schema.get(schema, {}):
+                continue
+            jobs.append(
+                _SqlJob(
+                    path=path,
+                    schema=schema,
+                    target=target_root / schema.lower() / f'{rel}.md',
+                )
+            )
+    for schema in schema_list:
+        for stem, path in per_schema[schema].items():
+            jobs.append(
+                _SqlJob(
+                    path=path,
+                    schema=schema,
+                    target=target_root / schema.lower() / '_meta' / f'{stem}.md',
+                )
+            )
+    workers = max(1, min(max_workers, len(jobs) or 1))
     logger.info(
-        'custom sql: %d shared script(s), %d schema-specific for %d schema(s)',
+        'custom sql: %d shared script(s), %d schema-specific for %d schema(s) '
+        'jobs=%d workers=%d',
         len(scripts),
         schema_script_count,
         len(schema_list),
+        len(jobs),
+        workers,
     )
-    dumped = 0
-    with engine.connect() as conn:
-        for path, rel in scripts:
-            folder, _, stem = rel.partition('/')
-            for schema in schema_list:
-                if folder == '_meta' and stem in per_schema.get(schema, {}):
-                    continue
-                target = target_root / schema.lower() / f'{rel}.md'
-                if _run_custom_sql(conn, path, schema, target):
-                    dumped += 1
-        for schema in schema_list:
-            for stem, path in per_schema[schema].items():
-                target = target_root / schema.lower() / '_meta' / f'{stem}.md'
-                if _run_custom_sql(conn, path, schema, target):
-                    dumped += 1
+    dumped = _run_custom_sql_jobs(engine, jobs, workers) if jobs else 0
     logger.info('custom sql: wrote %d file(s)', dumped)
     return dumped

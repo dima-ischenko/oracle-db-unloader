@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -189,34 +190,103 @@ def _walk_type_deps_files(output_dir: Path, schema: str, object_type: str) -> Se
     return found
 
 
+def _write_object_deps(
+    output_dir: Path, obj: DbObject, graph: DependencyGraph
+) -> Tuple[Optional[str], int]:
+    rows = dependency_rows(graph, node_from_object(obj))
+    if not rows:
+        return None, 0
+    relpath = obj.deps_relpath
+    target = Path(output_dir) / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(format_dep_markdown(rows), encoding='utf-8')
+    return relpath, len(rows)
+
+
+def _write_dep_objects(
+    output_dir: Path,
+    schema: str,
+    to_process: Sequence[DbObject],
+    graph: DependencyGraph,
+    workers: int,
+) -> Tuple[Set[str], int]:
+    remaining = len(to_process)
+    iterator = iter(to_process)
+    pool = ThreadPoolExecutor(max_workers=workers)
+    futures = {}
+    known: Set[str] = set()
+    written = 0
+    try:
+        for _ in range(workers):
+            obj = next(iterator, None)
+            if obj is None:
+                break
+            futures[pool.submit(_write_object_deps, output_dir, obj, graph)] = obj
+        while futures:
+            done, _pending = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                obj = futures.pop(future)
+                try:
+                    relpath, row_count = future.result()
+                except Exception as exc:
+                    logger.exception(
+                        'failed to write dependencies %s %s.%s',
+                        obj.object_type,
+                        obj.owner,
+                        obj.name,
+                    )
+                    raise RuntimeError(
+                        f'failed to write dependencies {obj.object_type} '
+                        f'{obj.owner}.{obj.name}'
+                    ) from exc
+                remaining -= 1
+                if relpath is not None:
+                    known.add(relpath)
+                    written += 1
+                    logger.info(
+                        'dependencies %s schema=%s type=%s rows=%d remaining=%d',
+                        (Path(output_dir) / relpath).as_posix(),
+                        schema,
+                        obj.object_type,
+                        row_count,
+                        remaining,
+                    )
+                nxt = next(iterator, None)
+                if nxt is not None:
+                    futures[
+                        pool.submit(_write_object_deps, output_dir, nxt, graph)
+                    ] = nxt
+    finally:
+        for future in list(futures):
+            future.cancel()
+        pool.shutdown(wait=True, cancel_futures=True)
+    return known, written
+
+
 def write_schema_dependencies(
     output_dir: Path,
     schema: str,
     inventory: Sequence[DbObject],
     object_types: Sequence[str],
     graph: DependencyGraph,
+    *,
+    max_workers: int = 5,
 ) -> int:
     selected = set(object_types)
+    to_process = [obj for obj in inventory if obj.object_type in selected]
+    workers = max(1, min(max_workers, len(to_process) or 1))
+    logger.info(
+        'dependencies schema %s: inventory=%d selected=%d workers=%d',
+        schema,
+        len(inventory),
+        len(to_process),
+        workers,
+    )
     known: Set[str] = set()
     written = 0
-    for obj in inventory:
-        if obj.object_type not in selected:
-            continue
-        rows = dependency_rows(graph, node_from_object(obj))
-        if not rows:
-            continue
-        relpath = obj.deps_relpath
-        known.add(relpath)
-        target = Path(output_dir) / relpath
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(format_dep_markdown(rows), encoding='utf-8')
-        written += 1
-        logger.info(
-            'dependencies %s schema=%s type=%s rows=%d',
-            target.as_posix(),
-            schema,
-            obj.object_type,
-            len(rows),
+    if to_process:
+        known, written = _write_dep_objects(
+            output_dir, schema, to_process, graph, workers
         )
 
     stale = walk_deps_files(output_dir, schema, object_types) - known
@@ -241,13 +311,18 @@ def dump_dependencies(
     output_dir: Path,
     schemas: Sequence[str],
     object_types: Sequence[str],
+    *,
+    max_workers: int = 5,
 ) -> int:
     schema_list = [schema.strip().upper() for schema in schemas if schema.strip()]
     if not schema_list:
         return 0
     edges = fetch_dependency_edges(engine)
     logger.info(
-        'dependencies: loaded %d edge(s) for %d schema(s)', len(edges), len(schema_list)
+        'dependencies: loaded %d edge(s) for %d schema(s) max_workers=%d',
+        len(edges),
+        len(schema_list),
+        max_workers,
     )
     graph = build_graph(edges)
     dumped = 0
@@ -259,6 +334,7 @@ def dump_dependencies(
             inventory,
             object_types,
             graph,
+            max_workers=max_workers,
         )
     logger.info('dependencies: wrote %d file(s)', dumped)
     return dumped

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+import threading
 from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from oracle_db_unloader.dml import (
     discover_custom_sql,
@@ -122,6 +126,57 @@ def test_schema_meta_overrides_shared_script(tmp_path):
     assert 'shared' in sql_by_schema['HR']
 
 
+def test_dump_custom_sql_logs_workers(tmp_path, caplog):
+    meta = tmp_path / '_meta'
+    meta.mkdir()
+    (meta / 'get_table_stats.sql').write_text(
+        'select :schema as owner from dual',
+        encoding='utf-8',
+    )
+    conn = _FakeConnection(
+        columns=['OWNER'],
+        rows_by_schema={'SCOTT': [['SCOTT']], 'HR': [['HR']]},
+    )
+    caplog.set_level(logging.INFO, logger='oracle_db_unloader')
+    dumped = dump_custom_sql(
+        _FakeEngine(conn),
+        tmp_path,
+        ['SCOTT', 'HR'],
+        max_workers=5,
+    )
+    assert dumped == 2
+    assert (
+        'custom sql: 1 shared script(s), 0 schema-specific for 2 schema(s) '
+        'jobs=2 workers=2'
+    ) in caplog.text
+
+
+def test_dump_custom_sql_failure_stops_remaining(monkeypatch, tmp_path):
+    meta = tmp_path / '_meta'
+    meta.mkdir()
+    (meta / 'stats.sql').write_text(
+        'select :schema as owner from dual',
+        encoding='utf-8',
+    )
+    ran = []
+
+    def fake_run(_engine, job):
+        ran.append(job.schema)
+        if job.schema == 'SCOTT':
+            raise RuntimeError('boom')
+        return 1
+
+    monkeypatch.setattr('oracle_db_unloader.dml._run_custom_sql', fake_run)
+    with pytest.raises(RuntimeError, match='stats.sql schema=SCOTT'):
+        dump_custom_sql(
+            _FakeEngine(_FakeConnection(columns=['OWNER'], rows_by_schema={})),
+            tmp_path,
+            ['SCOTT', 'HR'],
+            max_workers=1,
+        )
+    assert ran == ['SCOTT']
+
+
 class _FakeResult:
     def __init__(self, columns, rows):
         self._columns = columns
@@ -139,12 +194,15 @@ class _FakeConnection:
         self.columns = columns
         self.rows_by_schema = rows_by_schema
         self.calls = []
+        self._lock = threading.Lock()
 
     def execute(self, statement, params=None):
         sql = getattr(statement, 'text', None) or str(statement)
-        self.calls.append((sql, params or {}))
-        schema = (params or {}).get('schema')
-        return _FakeResult(self.columns, self.rows_by_schema.get(schema, []))
+        with self._lock:
+            self.calls.append((sql, params or {}))
+            schema = (params or {}).get('schema')
+            rows = list(self.rows_by_schema.get(schema, []))
+        return _FakeResult(self.columns, rows)
 
     def __enter__(self):
         return self

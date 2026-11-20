@@ -318,7 +318,7 @@ class Unloader:
     """Caller-owned engine plus output tree; each extractor is a separate method.
 
     The engine is never disposed here. Apply pool sizing on the engine you
-    pass in; ``max_workers`` only caps parallel DDL workers.
+    pass in; ``max_workers`` caps parallel DDL, ``_deps``, and custom-sql workers.
     """
 
     def __init__(
@@ -375,6 +375,7 @@ class Unloader:
                 self.output_dir,
                 self.schemas,
                 self.object_types,
+                max_workers=self.max_workers,
             )
         except Exception as exc:
             self._fail(RunStats(), started, exc, label='dependencies')
@@ -389,6 +390,7 @@ class Unloader:
                 self.output_dir,
                 self.schemas,
                 custom_sql_dir=sql_dir,
+                max_workers=self.max_workers,
             )
         except Exception as exc:
             self._fail(RunStats(), started, exc, label='custom sql')

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from unittest.mock import MagicMock
+
+import pytest
 
 from oracle_db_unloader.dependencies import (
     Node,
@@ -172,7 +175,11 @@ def test_dump_dependencies_fetches_once_and_writes(monkeypatch, tmp_path):
     )
 
     dumped = dump_dependencies(
-        MagicMock(), tmp_path, ['scott', 'hr'], ['VIEW', 'TABLE']
+        MagicMock(),
+        tmp_path,
+        ['scott', 'hr'],
+        ['VIEW', 'TABLE'],
+        max_workers=3,
     )
     assert dumped == 4
     assert calls == {'edges': 1, 'inventory': 2}
@@ -184,3 +191,59 @@ def test_format_dep_markdown_omits_empty_section():
     graph = build_graph([_edge(('HR', 'EMP_V', 'VIEW'), ('SCOTT', 'EMP', 'TABLE'))])
     rows = dependency_rows(graph, Node('HR', 'EMP_V', 'VIEW'))
     assert format_dep_markdown(rows) == ('## Downstream\n\n> scott.emp(table)\n')
+
+
+def test_write_schema_dependencies_logs_workers(tmp_path, caplog):
+    graph = build_graph(
+        [
+            _edge(('SCOTT', 'EMP_V', 'VIEW'), ('SCOTT', 'EMP', 'TABLE')),
+            _edge(('SCOTT', 'DEPT_V', 'VIEW'), ('SCOTT', 'DEPT', 'TABLE')),
+        ]
+    )
+    caplog.set_level(logging.INFO, logger='oracle_db_unloader')
+    written = write_schema_dependencies(
+        tmp_path,
+        'SCOTT',
+        [
+            _obj('SCOTT', 'EMP_V', 'VIEW'),
+            _obj('SCOTT', 'DEPT_V', 'VIEW'),
+            _obj('SCOTT', 'EMP', 'TABLE'),
+        ],
+        ['VIEW'],
+        graph,
+        max_workers=5,
+    )
+    assert written == 2
+    assert 'dependencies schema SCOTT: inventory=3 selected=2 workers=2' in caplog.text
+    assert (tmp_path / 'scott' / '_deps' / 'views' / 'emp_v.md').is_file()
+    assert (tmp_path / 'scott' / '_deps' / 'views' / 'dept_v.md').is_file()
+
+
+def test_write_schema_dependencies_failure_stops_remaining(monkeypatch, tmp_path):
+    graph = build_graph(
+        [
+            _edge(('SCOTT', 'T1', 'TABLE'), ('SCOTT', 'T2', 'TABLE')),
+            _edge(('SCOTT', 'T2', 'TABLE'), ('SCOTT', 'T3', 'TABLE')),
+        ]
+    )
+    written = []
+
+    def fake_write(output_dir, obj, _graph):
+        written.append(obj.name)
+        if obj.name == 'T1':
+            raise RuntimeError('boom')
+        return obj.deps_relpath, 1
+
+    monkeypatch.setattr(
+        'oracle_db_unloader.dependencies._write_object_deps', fake_write
+    )
+    with pytest.raises(RuntimeError, match='TABLE SCOTT.T1'):
+        write_schema_dependencies(
+            tmp_path,
+            'SCOTT',
+            [_obj('SCOTT', 'T1', 'TABLE'), _obj('SCOTT', 'T2', 'TABLE')],
+            ['TABLE'],
+            graph,
+            max_workers=1,
+        )
+    assert written == ['T1']

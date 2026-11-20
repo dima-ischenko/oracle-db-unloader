@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest='max_workers',
         type=int,
         default=5,
-        help='Parallel unload workers / SQLAlchemy pool size (default: 5)',
+        help='Parallel DDL/_deps/_meta workers / SQLAlchemy pool size (default: 5)',
     )
     parser.add_argument(
         '--custom-sql-dir',

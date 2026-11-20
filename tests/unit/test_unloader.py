@@ -174,3 +174,23 @@ def test_unloader_stages_are_independent(monkeypatch, tmp_path):
     client.ddl()
     assert called == ['deps', 'custom', 'ddl']
     assert (tmp_path / 'scott' / 'tables' / 'emp.sql').is_file()
+
+
+def test_dependencies_pass_max_workers(monkeypatch, tmp_path):
+    seen = {}
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.dump_dependencies',
+        lambda *args, **kwargs: seen.update(kwargs) or 1,
+    )
+    Unloader(MagicMock(), ['SCOTT'], tmp_path, max_workers=4).dependencies()
+    assert seen['max_workers'] == 4
+
+
+def test_custom_sql_pass_max_workers(monkeypatch, tmp_path):
+    seen = {}
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.dump_custom_sql',
+        lambda *args, **kwargs: seen.update(kwargs) or 0,
+    )
+    Unloader(MagicMock(), ['SCOTT'], tmp_path, max_workers=4).custom_sql()
+    assert seen['max_workers'] == 4
