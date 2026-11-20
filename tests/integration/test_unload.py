@@ -41,13 +41,14 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     _unload(fresh_schema, tmp_path)
 
     table = Path(tmp_path) / 'test' / 'tables' / 'emp_heap.sql'
+    emp_hash = Path(tmp_path) / 'test' / 'tables' / 'emp_hash.sql'
     sales = Path(tmp_path) / 'test' / 'tables' / 'sales_part.sql'
     camel = Path(tmp_path) / 'test' / 'tables' / 'mixedcase_metrics.sql'
     view = Path(tmp_path) / 'test' / 'views' / 'emp_v.sql'
     pkg_s = Path(tmp_path) / 'test' / 'packages' / 'pkg_demo_s.sql'
     dml = Path(tmp_path) / 'test' / '_meta' / 'currency.md'
 
-    for path in (table, sales, camel, view, pkg_s, dml):
+    for path in (table, emp_hash, sales, camel, view, pkg_s, dml):
         assert path.is_file(), path
 
     table_sql = table.read_text(encoding='utf-8')
@@ -59,6 +60,9 @@ def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):
     sales_sql = sales.read_text(encoding='utf-8')
     assert 'ALTER TABLE sales_part MODIFY PARTITION BY RANGE (sale_date)' in sales_sql
     assert 'partition p2024' not in sales_sql.lower()
+
+    hash_sql = emp_hash.read_text(encoding='utf-8')
+    assert 'ALTER TABLE emp_hash MODIFY PARTITION BY HASH (id) PARTITIONS 4' in hash_sql
 
     camel_sql = camel.read_text(encoding='utf-8')
     assert '"MixedCase_metrics"' in camel_sql

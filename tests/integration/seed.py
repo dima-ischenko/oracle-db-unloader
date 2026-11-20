@@ -10,6 +10,7 @@ begin
       from user_objects
      where object_name in (
              'EMP_HEAP',
+             'EMP_HASH',
              'SALES_PART',
              'EMP_V',
              'PKG_DEMO',
@@ -44,6 +45,13 @@ CREATE_STATEMENTS = [
     )
     """,
     "comment on table emp_heap is 'heap employees'",
+    """
+    create table emp_hash (
+      id number,
+      name varchar2(32)
+    )
+    partition by hash (id) partitions 4
+    """,
     "comment on column emp_heap.name is 'employee name'",
     "insert into emp_heap (id, name) values (1, 'alice')",
     "insert into emp_heap (id, name) values (2, 'bob')",

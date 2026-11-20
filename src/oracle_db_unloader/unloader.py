@@ -23,7 +23,11 @@ from .inventory import (
     walk_schema_files,
 )
 from .logger import get_logger
-from .metadata import fetch_partition_info, format_partition_template_block
+from .metadata import (
+    fetch_partition_info,
+    format_partition_template_block,
+    is_partition_shape_supported,
+)
 from .resources import (
     as_text,
     bind_params,
@@ -92,7 +96,19 @@ def write_object(engine: Engine, obj: DbObject, output_dir: Path) -> None:
         footer = ''
         if obj.object_type in HEADER_TYPES:
             partition = fetch_partition_info(conn, obj)
-            footer = format_partition_template_block(obj.name, partition)
+            if partition is None:
+                pass
+            elif is_partition_shape_supported(partition):
+                footer = format_partition_template_block(obj.name, partition)
+            else:
+                logger.warning(
+                    'partition definition skipped, unsupported shape '
+                    'table=%s.%s partitioning=%s subpartitioning=%s',
+                    obj.owner,
+                    obj.name,
+                    partition.partitioning_type,
+                    partition.subpartitioning_type or 'NONE',
+                )
         content = ddl
         if footer:
             content = content.rstrip() + '\n\n' + footer + '\n'
