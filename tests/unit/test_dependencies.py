@@ -12,7 +12,6 @@ from oracle_db_unloader.dependencies import (
     write_schema_dependencies,
 )
 from oracle_db_unloader.inventory import DbObject
-from oracle_db_unloader.unloader import unload
 
 
 def _edge(src, dst):
@@ -179,45 +178,6 @@ def test_dump_dependencies_fetches_once_and_writes(monkeypatch, tmp_path):
     assert calls == {'edges': 1, 'inventory': 2}
     assert (tmp_path / 'scott' / '_deps' / 'views' / 'emp_v.md').is_file()
     assert (tmp_path / 'hr' / '_deps' / 'tables' / 'emp.md').is_file()
-
-
-def test_unload_runs_dependencies_after_ddl(monkeypatch, tmp_path):
-    order = []
-
-    monkeypatch.setattr(
-        'oracle_db_unloader.unloader.fetch_inventory',
-        lambda _engine, _schema: [_obj('SCOTT', 'EMP', 'TABLE')],
-    )
-
-    def fake_write(_engine, obj, output_dir):
-        order.append('ddl')
-        path = output_dir / obj.relpath
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('-- emp\n', encoding='utf-8')
-
-    monkeypatch.setattr('oracle_db_unloader.unloader.write_object', fake_write)
-    monkeypatch.setattr(
-        'oracle_db_unloader.unloader.dump_dependencies',
-        lambda *args, **kwargs: order.append('deps') or 1,
-    )
-    monkeypatch.setattr(
-        'oracle_db_unloader.unloader.dump_custom_sql',
-        lambda *args, **kwargs: order.append('custom') or 0,
-    )
-
-    unload(MagicMock(), ['SCOTT'], tmp_path, object_types=['table'], max_workers=1)
-    assert order == ['ddl', 'custom']
-
-    order.clear()
-    unload(
-        MagicMock(),
-        ['SCOTT'],
-        tmp_path,
-        object_types=['table'],
-        max_workers=1,
-        dependencies=True,
-    )
-    assert order == ['ddl', 'deps', 'custom']
 
 
 def test_format_dep_markdown_omits_empty_section():

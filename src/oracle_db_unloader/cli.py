@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 
 from .inventory import normalize_object_types
 from .logger import configure_logging, get_logger
-from .unloader import UnloadError, unload
+from .unloader import UnloadError, Unloader
 
 logger = get_logger(__name__)
 
@@ -146,17 +146,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         pool_pre_ping=True,
     )
     try:
-        unload(
+        client = Unloader(
             engine,
             schemas=_split_csv(args.schemas),
             output_dir=args.output_dir,
             max_workers=args.max_workers,
-            custom_sql_dir=args.custom_sql_dir,
             object_types=args.object_types,
-            full=args.full,
-            lookback_minutes=args.lookback_minutes,
-            dependencies=args.dependencies,
         )
+        client.ddl(full=args.full, lookback_minutes=args.lookback_minutes)
+        if args.dependencies:
+            client.dependencies()
+        client.custom_sql(custom_sql_dir=args.custom_sql_dir)
     except UnloadError as exc:
         logger.error('%s', exc)
         return 1

@@ -5,7 +5,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Union
+from typing import Dict, Iterable, List, NoReturn, Optional, Sequence, Set, Union
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -236,8 +236,7 @@ def _unload_object_type(
     to_write, to_delete = plan_actions(objects, disk, watermark, lookback_minutes)
     workers = max(1, min(max_workers, len(to_write) or 1))
     logger.info(
-        'schema %s type %s: inventory=%d write=%d delete=%d workers=%d '
-        'watermark=%s',
+        'schema %s type %s: inventory=%d write=%d delete=%d workers=%d watermark=%s',
         schema,
         object_type,
         len(objects),
@@ -315,69 +314,112 @@ def unload_schema(
         )
 
 
-def unload(
-    engine: Engine,
-    schemas: Sequence[str],
-    output_dir: Union[str, Path],
-    *,
-    max_workers: int = 5,
-    custom_sql_dir: Union[str, Path, None] = None,
-    object_types: Optional[Sequence[str]] = None,
-    full: bool = False,
-    lookback_minutes: int = 0,
-    dependencies: bool = False,
-) -> None:
-    """Unload schema objects using a caller-owned SQLAlchemy engine.
+class Unloader:
+    """Caller-owned engine plus output tree; each extractor is a separate method.
 
     The engine is never disposed here. Apply pool sizing on the engine you
-    pass in; ``max_workers`` only caps parallel workers.
-
-    Stages run in order: DDL, optional dependency trees, then custom SQL.
-    Any exception stops the run: remaining object types and schemas are not
-    started, and watermarks are not advanced for the failed type.
+    pass in; ``max_workers`` only caps parallel DDL workers.
     """
-    if max_workers < 1:
-        raise ValueError('max_workers must be >= 1')
-    schema_list = _normalize_schemas(schemas)
-    type_list = normalize_object_types(object_types)
-    target = Path(output_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    started = time.perf_counter()
-    sql_dir = Path(custom_sql_dir) if custom_sql_dir is not None else None
-    logger.info(
-        'unload start schemas=%s object_types=%s output_dir=%s full=%s '
-        'lookback_minutes=%s dependencies=%s custom_sql_dir=%s',
-        ','.join(schema_list),
-        ','.join(type_list),
-        target,
-        full,
-        lookback_minutes,
-        dependencies,
-        sql_dir or 'none',
-    )
-    stats = RunStats()
-    try:
-        for schema in schema_list:
-            logger.info('unloading schema %s to %s', schema, target)
+
+    def __init__(
+        self,
+        engine: Engine,
+        schemas: Sequence[str],
+        output_dir: Union[str, Path],
+        *,
+        max_workers: int = 5,
+        object_types: Optional[Sequence[str]] = None,
+    ) -> None:
+        if max_workers < 1:
+            raise ValueError('max_workers must be >= 1')
+        self.engine = engine
+        self.schemas = _normalize_schemas(schemas)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_workers = max_workers
+        self.object_types = normalize_object_types(object_types)
+
+    def ddl(self, *, full: bool = False, lookback_minutes: int = 0) -> RunStats:
+        """Incremental object DDL into ``schema/<type>/*.sql``."""
+        started = time.perf_counter()
+        stats = RunStats()
+        logger.info(
+            'ddl start schemas=%s object_types=%s output_dir=%s full=%s '
+            'lookback_minutes=%s',
+            ','.join(self.schemas),
+            ','.join(self.object_types),
+            self.output_dir,
+            full,
+            lookback_minutes,
+        )
+        try:
+            self._ddl(stats, full=full, lookback_minutes=lookback_minutes)
+        except Exception as exc:
+            self._fail(stats, started, exc, label='ddl')
+        elapsed = time.perf_counter() - started
+        logger.info(
+            'ddl complete added=%d updated=%d deleted=%d in %.1fs',
+            stats.added,
+            stats.updated,
+            stats.deleted,
+            elapsed,
+        )
+        return stats
+
+    def dependencies(self) -> int:
+        """Full-refresh per-object trees under ``schema/_deps/``."""
+        started = time.perf_counter()
+        try:
+            return dump_dependencies(
+                self.engine,
+                self.output_dir,
+                self.schemas,
+                self.object_types,
+            )
+        except Exception as exc:
+            self._fail(RunStats(), started, exc, label='dependencies')
+
+    def custom_sql(self, custom_sql_dir: Union[str, Path, None] = None) -> int:
+        """Run user ``_*/`` SELECT scripts into ``schema/_meta/*.md``."""
+        started = time.perf_counter()
+        sql_dir = Path(custom_sql_dir) if custom_sql_dir is not None else None
+        try:
+            return dump_custom_sql(
+                self.engine,
+                self.output_dir,
+                self.schemas,
+                custom_sql_dir=sql_dir,
+            )
+        except Exception as exc:
+            self._fail(RunStats(), started, exc, label='custom sql')
+
+    def _ddl(self, stats: RunStats, *, full: bool, lookback_minutes: int) -> None:
+        for schema in self.schemas:
+            logger.info('unloading schema %s to %s', schema, self.output_dir)
             unload_schema(
-                engine,
+                self.engine,
                 schema,
-                target,
-                object_types=type_list,
+                self.output_dir,
+                object_types=self.object_types,
                 lookback_minutes=lookback_minutes,
-                max_workers=max_workers,
+                max_workers=self.max_workers,
                 full=full,
                 stats=stats,
             )
             logger.info('schema %s: done', schema)
 
-        if dependencies:
-            dump_dependencies(engine, target, schema_list, type_list)
-        dump_custom_sql(engine, target, schema_list, custom_sql_dir=sql_dir)
-    except Exception as exc:
+    def _fail(
+        self,
+        stats: RunStats,
+        started: float,
+        exc: Exception,
+        *,
+        label: str,
+    ) -> NoReturn:
         elapsed = time.perf_counter() - started
         logger.error(
-            'unload failed added=%d updated=%d deleted=%d (%.1fs)',
+            '%s failed added=%d updated=%d deleted=%d (%.1fs)',
+            label,
             stats.added,
             stats.updated,
             stats.deleted,
@@ -386,12 +428,3 @@ def unload(
         if isinstance(exc, UnloadError):
             raise
         raise UnloadError(str(exc)) from exc
-
-    elapsed = time.perf_counter() - started
-    logger.info(
-        'unload complete added=%d updated=%d deleted=%d in %.1fs',
-        stats.added,
-        stats.updated,
-        stats.deleted,
-        elapsed,
-    )

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from oracle_db_unloader import unload
+from oracle_db_unloader import Unloader
 from oracle_db_unloader.inventory import (
     fetch_inventory,
     max_last_ddl_time,
@@ -23,17 +23,17 @@ def _unload(
     object_types=None,
     dependencies=False,
 ):
-    unload(
+    client = Unloader(
         engine,
         schemas=['TEST'],
         output_dir=tmp_path,
         max_workers=2,
-        custom_sql_dir=custom_sql_dir,
         object_types=object_types,
-        full=full,
-        lookback_minutes=lookback_minutes,
-        dependencies=dependencies,
     )
+    client.ddl(full=full, lookback_minutes=lookback_minutes)
+    if dependencies:
+        client.dependencies()
+    client.custom_sql(custom_sql_dir=custom_sql_dir)
 
 
 def test_unload_writes_expected_files_and_headers(fresh_schema, tmp_path):

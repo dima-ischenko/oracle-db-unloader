@@ -8,7 +8,7 @@ import pytest
 
 from oracle_db_unloader.inventory import DbObject
 from oracle_db_unloader.state import get_last_unload_at, load_state, state_path
-from oracle_db_unloader.unloader import UnloadError, unload
+from oracle_db_unloader.unloader import UnloadError, Unloader
 
 
 def _obj(schema, name, object_type='TABLE', when=None):
@@ -21,7 +21,19 @@ def _obj(schema, name, object_type='TABLE', when=None):
     )
 
 
-def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path, caplog):
+def _ddl(tmp_path, object_types, schemas=None, **kwargs):
+    Unloader(
+        MagicMock(),
+        schemas or ['SCOTT'],
+        tmp_path,
+        object_types=object_types,
+        max_workers=1,
+    ).ddl(**kwargs)
+
+
+def test_first_exception_stops_remaining_types_and_schemas(
+    monkeypatch, tmp_path, caplog
+):
     inventory = {
         'SCOTT': [_obj('SCOTT', 'EMP'), _obj('SCOTT', 'V_EMP', 'VIEW')],
         'HR': [_obj('HR', 'DEPT')],
@@ -44,13 +56,7 @@ def test_first_exception_stops_remaining_types_and_schemas(monkeypatch, tmp_path
 
     caplog.set_level(logging.INFO, logger='oracle_db_unloader')
     with pytest.raises(UnloadError, match='VIEW SCOTT.V_EMP'):
-        unload(
-            MagicMock(),
-            ['SCOTT', 'HR'],
-            tmp_path,
-            object_types=['table', 'view'],
-            max_workers=1,
-        )
+        _ddl(tmp_path, ['table', 'view'], schemas=['SCOTT', 'HR'])
 
     assert written == [('SCOTT', 'TABLE', 'EMP'), ('SCOTT', 'VIEW', 'V_EMP')]
     scott = load_state(tmp_path, 'SCOTT')
@@ -75,13 +81,7 @@ def test_same_type_failure_does_not_write_remaining(monkeypatch, tmp_path):
     monkeypatch.setattr('oracle_db_unloader.unloader.write_object', fake_write)
 
     with pytest.raises(UnloadError, match='TABLE SCOTT.T1'):
-        unload(
-            MagicMock(),
-            ['SCOTT'],
-            tmp_path,
-            object_types=['table'],
-            max_workers=1,
-        )
+        _ddl(tmp_path, ['table'])
     assert written == ['T1']
 
 
@@ -104,15 +104,9 @@ def test_progress_and_summary_logging(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr('oracle_db_unloader.unloader.write_object', fake_write)
 
     caplog.set_level(logging.INFO, logger='oracle_db_unloader')
-    unload(
-        MagicMock(),
-        ['SCOTT'],
-        tmp_path,
-        object_types=['table'],
-        max_workers=1,
-    )
+    _ddl(tmp_path, ['table'])
 
-    assert 'unload complete added=1 updated=0 deleted=1' in caplog.text
+    assert 'ddl complete added=1 updated=0 deleted=1' in caplog.text
     assert not gone.exists()
 
 
@@ -122,17 +116,11 @@ def test_empty_schema_writes_nothing(monkeypatch, tmp_path, caplog):
         lambda _engine, _schema: [],
     )
     caplog.set_level(logging.INFO, logger='oracle_db_unloader')
-    unload(
-        MagicMock(),
-        ['EMPTY'],
-        tmp_path,
-        object_types=['table'],
-        max_workers=1,
-    )
+    _ddl(tmp_path, ['table'], schemas=['EMPTY'])
     assert not (tmp_path / 'empty').exists()
     assert not state_path(tmp_path, 'EMPTY').exists()
     assert 'inventory=0 write=0 delete=0' in caplog.text
-    assert 'unload complete added=0 updated=0 deleted=0' in caplog.text
+    assert 'ddl complete added=0 updated=0 deleted=0' in caplog.text
 
 
 def test_empty_schema_deletes_stale_files(monkeypatch, tmp_path):
@@ -143,12 +131,46 @@ def test_empty_schema_deletes_stale_files(monkeypatch, tmp_path):
         'oracle_db_unloader.unloader.fetch_inventory',
         lambda _engine, _schema: [],
     )
-    unload(
+    _ddl(tmp_path, ['table'], schemas=['EMPTY'])
+    assert not stale.exists()
+    assert get_last_unload_at(load_state(tmp_path, 'EMPTY'), 'TABLE') is None
+
+
+def test_unloader_stages_are_independent(monkeypatch, tmp_path):
+    called = []
+
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.fetch_inventory',
+        lambda _engine, _schema: [_obj('SCOTT', 'EMP')],
+    )
+
+    def fake_write(_engine, obj, output_dir):
+        called.append('ddl')
+        path = output_dir / obj.relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('-- emp\n', encoding='utf-8')
+
+    monkeypatch.setattr('oracle_db_unloader.unloader.write_object', fake_write)
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.dump_dependencies',
+        lambda *args, **kwargs: called.append('deps') or 1,
+    )
+    monkeypatch.setattr(
+        'oracle_db_unloader.unloader.dump_custom_sql',
+        lambda *args, **kwargs: called.append('custom') or 0,
+    )
+
+    client = Unloader(
         MagicMock(),
-        ['EMPTY'],
+        ['SCOTT'],
         tmp_path,
         object_types=['table'],
         max_workers=1,
     )
-    assert not stale.exists()
-    assert get_last_unload_at(load_state(tmp_path, 'EMPTY'), 'TABLE') is None
+    client.dependencies()
+    assert called == ['deps']
+    client.custom_sql()
+    assert called == ['deps', 'custom']
+    client.ddl()
+    assert called == ['deps', 'custom', 'ddl']
+    assert (tmp_path / 'scott' / 'tables' / 'emp.sql').is_file()

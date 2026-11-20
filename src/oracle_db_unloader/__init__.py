@@ -1,4 +1,4 @@
-from .unloader import UnloadError, unload
+from .unloader import UnloadError, Unloader
 
-__all__ = ['unload', 'UnloadError']
+__all__ = ['Unloader', 'UnloadError']
 __version__ = '2.0.5'

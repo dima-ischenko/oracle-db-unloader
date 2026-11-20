@@ -70,7 +70,7 @@ watermarks are not used. Off by default.
 
 ```python
 from sqlalchemy import create_engine
-from oracle_db_unloader import unload
+from oracle_db_unloader import Unloader
 
 engine = create_engine(
     'oracle+oracledb://system:pass@localhost:1521/?service_name=FREEPDB1',
@@ -79,15 +79,16 @@ engine = create_engine(
     pool_pre_ping=True,
 )
 try:
-    unload(
+    client = Unloader(
         engine,
         schemas=['SCOTT'],
         object_types=['table', 'package'],
         output_dir='/data/ddl',
         max_workers=5,
-        custom_sql_dir='/data/dictionary_sql',
-        dependencies=True,
     )
+    client.ddl()
+    client.dependencies()
+    client.custom_sql(custom_sql_dir='/data/dictionary_sql')
 finally:
     engine.dispose()
 ```
