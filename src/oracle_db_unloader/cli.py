@@ -81,6 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
             'trigger,type,sequence,synonym'
         ),
     )
+    parser.add_argument(
+        '--dependencies',
+        action='store_true',
+        help=(
+            'Write per-object upstream/downstream dependency trees under '
+            '<schema>/_deps/. Independent of DDL watermarks; always a full refresh.'
+        ),
+    )
     return parser
 
 
@@ -147,6 +155,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             object_types=args.object_types,
             full=args.full,
             lookback_minutes=args.lookback_minutes,
+            dependencies=args.dependencies,
         )
     except UnloadError as exc:
         logger.error('%s', exc)

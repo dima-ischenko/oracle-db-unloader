@@ -17,6 +17,7 @@ def _unload(
     full=False,
     lookback_minutes=0,
     object_types=None,
+    dependencies=False,
 ):
     unload(
         engine,
@@ -27,6 +28,7 @@ def _unload(
         object_types=object_types,
         full=full,
         lookback_minutes=lookback_minutes,
+        dependencies=dependencies,
     )
 
 
@@ -126,6 +128,25 @@ def test_object_type_filter_keeps_other_types(fresh_schema, tmp_path):
 
     _unload(fresh_schema, tmp_path, object_types=['VIEW'])
     assert not view.exists()
+
+
+def test_dependencies_write_view_to_table_paths(fresh_schema, tmp_path):
+    time.sleep(1.1)
+    _unload(fresh_schema, tmp_path, object_types=['TABLE', 'VIEW'], dependencies=True)
+
+    view_deps = Path(tmp_path) / 'test' / '_deps' / 'views' / 'emp_v.md'
+    table_deps = Path(tmp_path) / 'test' / '_deps' / 'tables' / 'emp_heap.md'
+    assert view_deps.is_file()
+    assert table_deps.is_file()
+    view_text = view_deps.read_text(encoding='utf-8')
+    table_text = table_deps.read_text(encoding='utf-8')
+    assert 'test.emp_v(view) > test.emp_heap(table)' in view_text
+    assert 'downstream' in view_text
+    assert 'test.emp_v(view) > test.emp_heap(table)' in table_text
+    assert 'upstream' in table_text
+    assert not (
+        Path(tmp_path) / 'test' / '_deps' / 'tables' / 'currency_dict.md'
+    ).exists()
 
 
 def test_index_change_rewrites_table(fresh_schema, tmp_path):

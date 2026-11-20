@@ -19,6 +19,7 @@ def test_parse_db_url_and_defaults():
     assert args.schemas == 'scott,hr'
     assert args.lookback_minutes == 0
     assert args.object_types is None
+    assert args.dependencies is False
 
 
 def test_parse_login_and_flags():
@@ -37,10 +38,12 @@ def test_parse_login_and_flags():
             '--full',
             '--object-types',
             'table,package',
+            '--dependencies',
         ]
     )
     assert args.full is True
     assert args.object_types == ['TABLE', 'PACKAGE', 'PACKAGE BODY']
+    assert args.dependencies is True
 
 
 def test_unknown_object_type_errors():

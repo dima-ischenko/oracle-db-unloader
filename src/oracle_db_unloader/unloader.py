@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Union
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+from .dependencies import dump_dependencies
 from .dml import dump_custom_sql
 from .inventory import (
     HEADER_TYPES,
@@ -324,12 +325,14 @@ def unload(
     object_types: Optional[Sequence[str]] = None,
     full: bool = False,
     lookback_minutes: int = 0,
+    dependencies: bool = False,
 ) -> None:
     """Unload schema objects using a caller-owned SQLAlchemy engine.
 
     The engine is never disposed here. Apply pool sizing on the engine you
     pass in; ``max_workers`` only caps parallel workers.
 
+    Stages run in order: DDL, optional dependency trees, then custom SQL.
     Any exception stops the run: remaining object types and schemas are not
     started, and watermarks are not advanced for the failed type.
     """
@@ -343,12 +346,13 @@ def unload(
     sql_dir = Path(custom_sql_dir) if custom_sql_dir is not None else None
     logger.info(
         'unload start schemas=%s object_types=%s output_dir=%s full=%s '
-        'lookback_minutes=%s custom_sql_dir=%s',
+        'lookback_minutes=%s dependencies=%s custom_sql_dir=%s',
         ','.join(schema_list),
         ','.join(type_list),
         target,
         full,
         lookback_minutes,
+        dependencies,
         sql_dir or 'none',
     )
     stats = RunStats()
@@ -367,6 +371,8 @@ def unload(
             )
             logger.info('schema %s: done', schema)
 
+        if dependencies:
+            dump_dependencies(engine, target, schema_list, type_list)
         dump_custom_sql(engine, target, schema_list, custom_sql_dir=sql_dir)
     except Exception as exc:
         elapsed = time.perf_counter() - started

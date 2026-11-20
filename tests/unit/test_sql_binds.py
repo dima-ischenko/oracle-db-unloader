@@ -37,6 +37,17 @@ def test_inventory_tracks_partitions_and_indexes():
     assert 'EMIT_SCHEMA' in transform
 
 
+def test_dependency_edges_are_uncycled_catalog_dump():
+    sql = (SQL_DIR / 'dependency_edges.sql').read_text(encoding='utf-8')
+    lowered = sql.lower()
+    assert 'dba_dependencies' in lowered
+    assert "referenced_type != 'non-existent'" in lowered
+    assert "'sys'" in lowered
+    assert ':schema' not in sql
+    for marker in SQLPLUS_MARKERS:
+        assert marker not in lowered
+
+
 def test_split_statements_on_slash():
     statements = split_statements(
         'select :schema from dual\n/\nselect :obj_name from dual\n'

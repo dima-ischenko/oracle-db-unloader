@@ -131,12 +131,23 @@ class DbObject:
     def relpath(self) -> str:
         return object_relpath(self.schema, self.name, self.object_type)
 
+    @property
+    def deps_relpath(self) -> str:
+        return object_deps_relpath(self.schema, self.name, self.object_type)
+
 
 def object_relpath(schema: str, name: str, object_type: str) -> str:
     folder = TYPE_FOLDERS[object_type]
     suffix = TYPE_SUFFIX.get(object_type, '')
     filename = f'{name.lower()}{suffix}.sql'
     return f'{schema.lower()}/{folder}/{filename}'
+
+
+def object_deps_relpath(schema: str, name: str, object_type: str) -> str:
+    folder = TYPE_FOLDERS[object_type]
+    suffix = TYPE_SUFFIX.get(object_type, '')
+    filename = f'{name.lower()}{suffix}.md'
+    return f'{schema.lower()}/_deps/{folder}/{filename}'
 
 
 def normalize_ddl_time(value: Optional[datetime]) -> Optional[datetime]:

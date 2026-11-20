@@ -22,7 +22,8 @@ db-unloader --db-url oracle+oracledb://system:pass@localhost:1521/?service_name=
   --object-types table,view,package \
   --output-dir ./ddl \
   --max-workers 5 \
-  --custom-sql-dir ./dictionary_sql
+  --custom-sql-dir ./dictionary_sql \
+  --dependencies
 ```
 
 Login, password, and a TNS alias are also accepted:
@@ -58,6 +59,12 @@ to run the same query for every schema. A script in `<schema>/_meta/*.sql`
 runs only for that schema (and overrides a shared `_meta` script of the same
 name). Results are written as `<schema>/_meta/<script>.md`.
 
+`--dependencies` writes per-object upstream (consumers) and downstream
+(sources) leaf paths under `<schema>/_deps/<type>/`. That pass always
+refreshes the selected types: a new consumer in another schema does not
+change the object's `last_ddl_time`. DDL watermarks are not used. Off by
+default.
+
 ## Library
 
 ```python
@@ -78,6 +85,7 @@ try:
         output_dir='/data/ddl',
         max_workers=5,
         custom_sql_dir='/data/dictionary_sql',
+        dependencies=True,
     )
 finally:
     engine.dispose()
@@ -92,6 +100,8 @@ output_dir/
   scott/functions/*.sql
   scott/packages/*_s.sql *_b.sql
   scott/tables/*.sql
+  scott/_deps/tables/*.md
+  scott/_deps/views/*.md
   scott/_meta/get_table_stats.md
   scott/_meta/local.sql
   scott/_meta/local.md
@@ -107,6 +117,10 @@ partition by ...` statement (template only, no per-partition lists). Custom
 `_*/` SELECT scripts are always re-run with `:schema`. Shared scripts write
 under every schema; `<schema>/_meta/*.sql` writes only to that schema.
 
+`--dependencies` writes markdown tables of leaf dependency paths next to
+that tree as `<schema>/_deps/<type>/<object>.md`. Objects with no edges
+produce no file; stale `_deps` files for the selected types are removed.
+
 ## Tests
 
 ```bash
@@ -116,8 +130,3 @@ make test-integration
 make down-db
 ```
 
-## Release
-
-Push a tag `vX.Y.Z` that matches `version` in `pyproject.toml` and
-`__version__` in `src/oracle_db_unloader/__init__.py`. The Release workflow
-runs tests, builds sdist/wheel, and publishes to PyPI with Trusted Publishing.

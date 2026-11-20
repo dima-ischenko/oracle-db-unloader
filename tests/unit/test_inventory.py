@@ -10,6 +10,7 @@ from oracle_db_unloader.inventory import (
     max_last_ddl_time,
     next_watermark,
     normalize_object_types,
+    object_deps_relpath,
     object_relpath,
     plan_actions,
     walk_schema_files,
@@ -32,6 +33,10 @@ def test_object_relpath_suffixes():
     assert object_relpath('SCOTT', 'PKG_X', 'PACKAGE BODY') == 'scott/packages/pkg_x_b.sql'
     assert object_relpath('SCOTT', 'MixedCase_metrics', 'TABLE') == (
         'scott/tables/mixedcase_metrics.sql'
+    )
+    assert object_deps_relpath('SCOTT', 'EMP', 'TABLE') == 'scott/_deps/tables/emp.md'
+    assert object_deps_relpath('SCOTT', 'PKG_X', 'PACKAGE BODY') == (
+        'scott/_deps/packages/pkg_x_b.md'
     )
 
 
